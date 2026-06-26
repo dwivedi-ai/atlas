@@ -1,0 +1,6 @@
+# exp-runner runs on the system python3. Install with: pip install -r requirements.txt
+PyYAML>=6.0
+jsonschema>=4.0
+# Figures (token-cost-by-env + file-access heatmap, PNG, l1-doxed style):
+matplotlib>=3.5
+numpy>=1.22

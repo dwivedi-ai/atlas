@@ -1,0 +1,48 @@
+schema_version: "1"
+
+# Slug used as the job folder name (jobs/<job_id>/). Lowercase, digits, hyphens.
+job_id: add-health-endpoint
+
+repo:
+  # Provide exactly one of url / path.
+  url: https://github.com/acme/widgets.git
+  # path: /home/coder/widgets
+  ref: HEAD            # branch, tag, or SHA — resolved + pinned by `brew`
+  pinned_sha: null     # filled in automatically once brewed
+
+build:
+  stack: auto          # auto | python | node | none
+  command: null        # optional override, e.g. "pip install -r requirements-dev.txt"
+
+# ── Single task ──────────────────────────────────────────────────────────────
+# `task` is handed verbatim to the agent (WHAT to do — not how it is graded).
+task: |
+  Add a GET /health endpoint that returns HTTP 200 with the JSON body
+  {"status": "ok"}, wired into the application's router.
+
+# `accept` is handed ONLY to the judge (never the agent). Plain-English
+# description of what an accepted solution looks like. The judge turns this into a
+# mechanical test battery, floor-checks it, runs it against the solution, then
+# adjudicates.
+accept: |
+  A GET /health route exists and is wired into the app's router.
+  It responds 200 with JSON exactly {"status": "ok"}.
+  The repo's existing tests still pass.
+  No unrelated files are changed.
+
+# ── ...OR multiple tasks (each becomes a column in the per-task figures) ──────
+# Provide `tasks:` INSTEAD of task/accept to run several tasks in one job. Each is
+# graded by its own synthesized battery; `reps` runs apply to every task.
+# tasks:
+#   - id: health
+#     task:   Add a GET /health endpoint returning 200 {"status":"ok"}.
+#     accept: /health returns 200 {"status":"ok"}; existing tests pass.
+#   - id: version
+#     task:   Add a GET /version endpoint returning the package version.
+#     accept: /version returns 200 with a version string; existing tests pass.
+
+model: codex           # codex | claude
+reps: 1                # runs per task (≥2 gives the figures error bars + run dots)
+max_seconds: 0         # 0 = no timeout
+judge_votes: 1         # majority-vote the LLM-only adjudication criteria
+analyze: true          # after grading, the agent writes a self-analysis to agent-analysis/<run-id>.md

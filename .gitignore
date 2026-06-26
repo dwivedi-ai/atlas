@@ -1,0 +1,7 @@
+# Job output is generated, not source — keep the folder, ignore its contents.
+/jobs/*
+!/jobs/.gitkeep
+
+# Python bytecode
+__pycache__/
+*.pyc

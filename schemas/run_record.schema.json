@@ -1,0 +1,156 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "run_record.schema.json",
+  "title": "RunRecord",
+  "description": "Canonical telemetry record for one exp-runner agent run. Generalized from the L1-L4 harness: task_id/env_id patterns relaxed, repo + model surfaced, env_id fixed to 'asis'.",
+  "type": "object",
+  "required": ["schema_version", "run", "condition", "outcome", "tokens", "timing", "navigation", "operations", "raw"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "type": "string", "const": "1" },
+
+    "run": {
+      "type": "object",
+      "required": ["run_id", "experiment_id", "replication", "timestamp_start", "timestamp_end"],
+      "additionalProperties": false,
+      "properties": {
+        "run_id":          { "type": "string", "pattern": "^[a-zA-Z0-9._-]+$" },
+        "experiment_id":   { "type": "string" },
+        "operator":        { "type": ["string", "null"] },
+        "batch_id":        { "type": ["string", "null"] },
+        "replication":     { "type": "integer", "minimum": 1 },
+        "timestamp_start": { "type": "string", "format": "date-time" },
+        "timestamp_end":   { "type": "string", "format": "date-time" }
+      }
+    },
+
+    "condition": {
+      "type": "object",
+      "required": ["task_id", "env_id", "agent_id", "agent_provider", "base_repo_sha"],
+      "additionalProperties": false,
+      "properties": {
+        "task_id":          { "type": "string" },
+        "env_id":           { "type": "string" },
+        "agent_id":         { "type": "string" },
+        "agent_provider":   { "type": "string", "enum": ["anthropic", "openai", "google", "other"] },
+        "base_repo_sha":    { "type": "string" },
+        "repo_url":         { "type": ["string", "null"] },
+        "env_overlay_hash": { "type": ["string", "null"] }
+      }
+    },
+
+    "outcome": {
+      "type": "object",
+      "required": ["terminal_state", "score_automated"],
+      "additionalProperties": false,
+      "properties": {
+        "terminal_state": {
+          "type": "string",
+          "enum": ["accepted", "partial", "rejected", "completed", "failed", "timeout", "error"]
+        },
+        "verdict":         { "type": ["string", "null"] },
+        "score_automated": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "score_human":     { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "ac_results": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "passed": { "type": ["boolean", "null"] },
+              "output": { "type": ["string", "null"] }
+            }
+          }
+        }
+      }
+    },
+
+    "tokens": {
+      "type": "object",
+      "required": ["total_input", "total_output", "cache_read", "cache_write", "context_acquisition"],
+      "additionalProperties": false,
+      "properties": {
+        "total_input":               { "type": "integer", "minimum": 0 },
+        "total_output":              { "type": "integer", "minimum": 0 },
+        "cache_read":                { "type": "integer", "minimum": 0 },
+        "cache_write":               { "type": "integer", "minimum": 0 },
+        "total_effective":           { "type": ["integer", "null"], "minimum": 0 },
+        "context_acquisition":       { "type": "integer", "minimum": 0 },
+        "phase_orientation_input":   { "type": ["integer", "null"], "minimum": 0 },
+        "phase_implementation_input":{ "type": ["integer", "null"], "minimum": 0 },
+        "phase_verification_input":  { "type": ["integer", "null"], "minimum": 0 }
+      }
+    },
+
+    "timing": {
+      "type": "object",
+      "required": ["wall_clock_seconds", "time_to_first_edit_seconds"],
+      "additionalProperties": false,
+      "properties": {
+        "wall_clock_seconds":           { "type": ["number", "null"] },
+        "time_to_first_edit_seconds":   { "type": ["number", "null"] },
+        "phase_orientation_seconds":    { "type": ["number", "null"] },
+        "phase_implementation_seconds": { "type": ["number", "null"] },
+        "phase_verification_seconds":   { "type": ["number", "null"] }
+      }
+    },
+
+    "navigation": {
+      "type": "object",
+      "required": ["file_reads_total", "file_reads_unique", "nav_entropy", "nav_entropy_pre_edit",
+                   "files_read_sequence", "files_edited"],
+      "additionalProperties": false,
+      "properties": {
+        "file_reads_total":    { "type": "integer", "minimum": 0 },
+        "file_reads_unique":   { "type": "integer", "minimum": 0 },
+        "nav_entropy":         { "type": ["number", "null"] },
+        "nav_entropy_pre_edit":{ "type": ["number", "null"] },
+        "files_read_sequence": { "type": "array", "items": { "type": "string" } },
+        "files_edited":        { "type": "array", "items": { "type": "string" } },
+        "memory_reads":        { "type": "integer", "minimum": 0 },
+        "memory_writes":       { "type": "integer", "minimum": 0 },
+        "xo_reads":            { "type": "integer", "minimum": 0 },
+        "agents_md_read":      { "type": "boolean" },
+        "project_md_read":     { "type": "boolean" }
+      }
+    },
+
+    "operations": {
+      "type": "object",
+      "required": ["tool_calls_total", "bash_calls", "search_calls", "git_calls",
+                   "web_searches", "agent_spawns", "replanning_events", "message_count"],
+      "additionalProperties": false,
+      "properties": {
+        "tool_calls_total":  { "type": "integer", "minimum": 0 },
+        "bash_calls":        { "type": "integer", "minimum": 0 },
+        "search_calls":      { "type": "integer", "minimum": 0 },
+        "git_calls":         { "type": "integer", "minimum": 0 },
+        "web_searches":      { "type": "integer", "minimum": 0 },
+        "agent_spawns":      { "type": "integer", "minimum": 0 },
+        "replanning_events": { "type": "integer", "minimum": 0 },
+        "message_count":     { "type": "integer", "minimum": 0 }
+      }
+    },
+
+    "token_curve": {
+      "type": "array",
+      "description": "[[seq, cumulative_input_tokens], ...] sampled at each assistant message",
+      "items": {
+        "type": "array",
+        "items": { "type": "number" },
+        "minItems": 2,
+        "maxItems": 2
+      }
+    },
+
+    "raw": {
+      "type": "object",
+      "required": ["transcript_path", "patch_path", "grade_path"],
+      "additionalProperties": false,
+      "properties": {
+        "transcript_path": { "type": "string" },
+        "patch_path":      { "type": "string" },
+        "grade_path":      { "type": "string" }
+      }
+    }
+  }
+}
