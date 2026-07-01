@@ -68,8 +68,9 @@ background). It is a generalization of the `experiments/l1-doxed` harness so any
    `agent-analysis/` (`lib/figures.py`).
 
 Per-cell teardown: capture `git.patch` + transcript → **grade** (run the battery + LLM-adjudicate
-the `llm` criteria) → **self-analysis** (only if `analyze:true` — off by default for multi-env) →
-**telemetry** (`run_record.json`) → per-run `report.md` → restore claude settings → remove worktree.
+the `llm` criteria) → **self-analysis** (ON by default; `--no-analyze` skips it; runs post-hoc from
+`git.patch` if the workspace is already gone) → **telemetry** (`run_record.json`) → per-run `report.md`
+→ restore claude settings → remove worktree.
 
 ---
 
@@ -107,7 +108,7 @@ jobs/<job_id>/
 ├── agent-analysis/
 │   ├── fig_token_cost_by_env.png     ← the l1-doxed headline figure (PNG, white bg)
 │   ├── fig_file_access_by_env.png    ← file×env access heatmap (PNG)
-│   └── <run-id>.md           per-run self-analysis (only if analyze:true)
+│   └── <run-id>.md           per-run self-analysis text (unless --no-analyze)
 ├── REPORT.md                 job scorecard (cost by environment, runs table)
 └── runs/<run-id>/            one per (task, env, rep); run-id = <job>-<task>-<env>-<agent>-rNNN
     ├── run_meta.json  transcript.jsonl  git.patch  judge.json
@@ -138,7 +139,7 @@ codex login          # or:  claude login   (exp-runner ignores any ANTHROPIC_API
 --jobs N             # concurrent codex cells (default 4; claude is forced to 1)
 --reps N             # runs per (task × env)  (default 1)
 --tasks-file f.yaml  # multiple tasks in one job (list of {id?, task, accept})
---no-analyze         # skip the self-analysis pass (already off for multi-env)
+--no-analyze         # skip the per-run self-analysis text (ON by default)
 --brew-only          # stop after brew
 --job <id>           # re-run an already-authored job (resume-safe)
 ```
@@ -174,6 +175,14 @@ codex login          # or:  claude login   (exp-runner ignores any ANTHROPIC_API
   To force a clean re-run, delete the relevant `jobs/<id>/runs/*` (or the whole job).
 - **Passing env vars into a script from an expansion does NOT work** (`${X:+FOO=$X} bash …` runs
   `FOO=..` as a command). Use `export FOO=..; bash …`. (Real bug that was fixed in run.sh --jobs.)
+- **The `[k/N]` status counter counts FINISHED cells, not started ones** (`run_job.sh` `_status_line`
+  touches a `$DONE_DIR` marker then counts it). Don't revert it to counting `$STATUS_DIR` — under
+  parallelism every cell writes a pessimistic status file up front, so that would print `[N/N]` repeatedly.
+- **Self-analysis is ON by default for every job** and works POST-HOC: if the workspace is already gone it
+  runs in a temp dir with the saved `git.patch` embedded in the prompt. To backfill a finished job, call
+  `lib/self_analysis.sh` per run with `JOB_DIR/RUN_ID/AGENT_ID/TASK_PROMPT` set.
+- **Figures are PNG** (`fig_token_cost_by_env.png`, `fig_file_access_by_env.png`) — `report.py` embeds
+  `agent-analysis/fig_*.png` and the run.sh footer names them. Don't reintroduce the old `.svg` names.
 
 ---
 
