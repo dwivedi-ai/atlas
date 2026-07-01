@@ -101,12 +101,9 @@ def main() -> None:
     all7 = ask_choice("Run across all 7 environments E0..E6? (else just E0, repo as-is)", ["y", "n"], "y") == "y"
     environments = ["E0", "E1", "E2", "E3", "E4", "E5", "E6"] if all7 else ["E0"]
     reps = ask("Reps (runs per task × environment)", "1")
-    # A multi-environment run is a cost experiment — skip the per-run self-analysis
-    # by default to keep the (larger) matrix lean.
-    if all7:
-        analyze = False
-    else:
-        analyze = ask_choice("Have the agent write a self-analysis after grading?", ["y", "n"], "y") == "y"
+    _p("  (self-analysis = one extra agent call per run that writes a written reflection;")
+    _p("   turn it off to keep a large 7-env × many-rep matrix cheap.)")
+    analyze = ask_choice("Have the agent write a self-analysis (text) after each run?", ["y", "n"], "y") == "y"
     job_id_default = jobspec.slugify(Path(src.rstrip("/")).name.replace(".git", ""))
     job_id = ask("Job id (folder name)", job_id_default)
 

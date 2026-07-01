@@ -27,11 +27,21 @@ LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JOB_DIR="$(cd "$JOB_DIR" && pwd)"
 RUN_DIR="$JOB_DIR/runs/$RUN_ID"
 WORKSPACE="$RUN_DIR/workspace"
-[[ -d "$WORKSPACE" ]] || { echo "WARN: workspace gone, skipping self-analysis" >&2; exit 0; }
 
 field() { python3 "$LIB_DIR/jobspec.py" field "$JOB_DIR" "$1"; }
 # Prefer the exact task this run was given; fall back to the job's first task.
 TASK="${TASK_PROMPT:-$(field task)}"
+
+# The reflection normally runs in the live workspace (agent can `git diff` itself).
+# If the workspace is already gone (e.g. backfilling a finished job), run in a temp
+# dir and embed the saved git.patch in the prompt instead.
+POSTHOC=0; TMPDIR_SELF=""
+if [[ ! -d "$WORKSPACE" ]]; then
+  [[ -s "$RUN_DIR/git.patch" ]] || { echo "WARN: no workspace and no git.patch — skipping self-analysis" >&2; exit 0; }
+  POSTHOC=1
+  TMPDIR_SELF="$(mktemp -d)"
+  WORKSPACE="$TMPDIR_SELF"
+fi
 
 # ── Build the reflection prompt (grade folded in if the judge ran) ───────────
 GRADE_BLURB=""
@@ -51,13 +61,22 @@ PY
 fi
 
 REL_OUT="agent-analysis/ANALYSIS.md"
-PROMPT="You just attempted the following task in the current working directory:
+if [[ "$POSTHOC" == "1" ]]; then
+  DIFF_BLOCK="Here is the unified diff of exactly what you changed (your solution):
+
+--- DIFF ---
+$(head -c 12000 "$RUN_DIR/git.patch")
+--- END DIFF ---"
+else
+  DIFF_BLOCK="Your changes are already applied in this directory — run \`git diff\` to review exactly what you did."
+fi
+PROMPT="You attempted the following coding task:
 
 --- TASK ---
 ${TASK}
 --- END TASK ---
 
-Your changes are already applied in this directory — run \`git diff\` to review exactly what you did.
+${DIFF_BLOCK}
 ${GRADE_BLURB:+
 ${GRADE_BLURB}
 }
@@ -136,4 +155,5 @@ if [[ -s "$WS_FILE" ]]; then
 else
   echo "WARN: no self-analysis produced for $RUN_ID" >&2
 fi
+[[ -n "$TMPDIR_SELF" ]] && rm -rf "$TMPDIR_SELF"
 exit 0

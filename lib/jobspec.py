@@ -202,10 +202,8 @@ def cmd_create(args) -> None:
         spec["environments"] = [e.strip() for e in args.envs.split(",") if e.strip()]
     else:
         spec["environments"] = ALL7
-    # A multi-environment job is a cost experiment — default OFF the per-run
-    # self-analysis (extra agent calls) unless the user explicitly asked to keep it.
-    if len(spec["environments"]) > 1 and not args.no_analyze:
-        spec["analyze"] = False
+    # Self-analysis is ON by default for every job (analyze = not --no-analyze).
+    # It adds one agent call per cell; pass --no-analyze to keep a big matrix lean.
     if args.tasks_file:
         loaded = yaml.safe_load(Path(args.tasks_file).read_text())
         if not isinstance(loaded, list) or not loaded:

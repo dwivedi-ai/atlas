@@ -191,7 +191,7 @@ def job_report(job_dir: Path) -> Path:
 
     # Figures (auto-generated into agent-analysis/)
     aa = job_dir / "agent-analysis"
-    figs = sorted(aa.glob("fig_*.svg")) if aa.exists() else []
+    figs = sorted(aa.glob("fig_*.png")) if aa.exists() else []
     if figs:
         L.append("## Figures\n")
         for f in figs:

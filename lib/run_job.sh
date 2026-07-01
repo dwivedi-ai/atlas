@@ -61,8 +61,8 @@ echo " Environments:${ENV_IDS[*]}"
 echo " Reps:        $REPS   →   $TOTAL cells total"
 echo "================================================================"
 
-STATUS_DIR="$(mktemp -d)"
-trap 'rm -rf "$STATUS_DIR"' EXIT
+STATUS_DIR="$(mktemp -d)"; DONE_DIR="$(mktemp -d)"
+trap 'rm -rf "$STATUS_DIR" "$DONE_DIR"' EXIT
 
 run_cell() {
   local TID="$1" ENV_ID="$2" REP="$3"
@@ -97,10 +97,11 @@ run_cell() {
   _status_line "$RUN_ID" "$V" "$TOK"
 }
 
-# live status: count finished status files, print one line per completed cell
+# live status: print one line per FINISHED cell with a monotonic done-count.
 _status_line() {
   local rid="$1" verdict="$2" extra="$3"
-  local n; n=$(ls "$STATUS_DIR" 2>/dev/null | wc -l)
+  : > "$DONE_DIR/$rid"                       # mark this cell finished
+  local n; n=$(ls "$DONE_DIR" 2>/dev/null | wc -l)
   printf '[%2d/%2d] %-44s %-9s %s\n' "$n" "$TOTAL" "$rid" "$verdict" "$extra"
 }
 

@@ -143,10 +143,16 @@ JOB_DIR="$JOB_DIR" bash "$LIB/run_job.sh"
 python3 "$LIB/report.py" --job-dir "$JOB_DIR" >/dev/null 2>&1 || true
 python3 "$LIB/figures.py" --job-dir "$JOB_DIR" >/dev/null 2>&1 || true
 
+ANALYZE="$(python3 "$LIB/jobspec.py" field "$JOB_DIR" analyze)"
 echo ""
 echo "Done. Results for this job:"
-echo "  $JOB_DIR/REPORT.md                          job scorecard (verdicts across tasks/reps)"
-echo "  $JOB_DIR/agent-analysis/fig_*.svg           token-usage + file-access figures"
-echo "  $JOB_DIR/agent-analysis/<run-id>.md         each run's agent self-analysis"
-echo "  $JOB_DIR/runs/<run-id>/report.md            per-run report (criteria, cost, patch)"
-echo "  $JOB_DIR/runs/<run-id>/git.patch            the solution (apply with: git apply git.patch)"
+echo "  $JOB_DIR/REPORT.md                                    job scorecard + cost-by-environment"
+echo "  $JOB_DIR/agent-analysis/fig_token_cost_by_env.png     token cost per environment"
+echo "  $JOB_DIR/agent-analysis/fig_file_access_by_env.png    file-access heatmap"
+if [[ "$ANALYZE" != "False" ]]; then
+echo "  $JOB_DIR/agent-analysis/<run-id>.md                   per-run agent self-analysis"
+else
+echo "  (per-run self-analysis is OFF for multi-environment jobs — kept lean; use a single env to enable)"
+fi
+echo "  $JOB_DIR/runs/<run-id>/report.md                      per-run report (criteria, cost, patch)"
+echo "  $JOB_DIR/runs/<run-id>/git.patch                      the solution (git apply git.patch)"
