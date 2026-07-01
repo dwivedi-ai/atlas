@@ -127,8 +127,11 @@ def validate(spec: dict) -> None:
     for t in tasks:
         if not (t.get("task") or "").strip() or not (t.get("accept") or "").strip():
             raise ValueError(f"task {t.get('id')!r} needs non-empty task and accept text")
-    if spec.get("model") not in ("codex", "claude", "claude-sonnet-4-6"):
-        raise ValueError(f"model must be codex|claude, got {spec.get('model')!r}")
+    if spec.get("model") not in ("codex", "claude", "claude-sonnet-4-6",
+                                 "gemini", "gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite",
+                                 "agy", "agy-flash-low", "agy-flash-med", "agy-flash-high",
+                                 "agy-pro-low", "agy-pro-high", "agy-sonnet", "agy-opus", "agy-gpt-oss"):
+        raise ValueError(f"model must be codex|claude|gemini|agy, got {spec.get('model')!r}")
     if int(spec.get("reps", 1)) < 1:
         raise ValueError("reps must be >= 1")
     envs = spec.get("environments") or ["E0"]

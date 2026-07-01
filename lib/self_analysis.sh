@@ -106,6 +106,22 @@ ANALYSIS_EXIT=0
       --dangerously-bypass-approvals-and-sandbox --ephemeral --json \
       "$PROMPT" < /dev/null \
       > "$RUN_DIR/analysis_transcript.jsonl" 2>> "$RUN_DIR/analysis_stderr.txt"
+  elif [[ "$AGENT_ID" == gemini-* ]]; then
+    timeout "$MAX_SECONDS" env GEMINI_CLI_TRUST_WORKSPACE=true gemini \
+      -p "$PROMPT" --model "$AGENT_ID" \
+      --approval-mode yolo --skip-trust --output-format json \
+      < /dev/null \
+      > "$RUN_DIR/analysis_stdout.json" 2>> "$RUN_DIR/analysis_stderr.txt"
+  elif [[ "$AGENT_ID" == agy* ]]; then
+    AGY_HOME="$RUN_DIR/agy_home"
+    AGY_MODEL="$(python3 "$LIB_DIR/agy.py" cli-model "$AGENT_ID")"
+    GD_ARGS=(); [[ -d "$AGY_HOME/antigravity-cli" ]] && GD_ARGS=(--gemini_dir "$AGY_HOME")
+    timeout "$MAX_SECONDS" agy -p "$PROMPT" \
+      --model "$AGY_MODEL" --dangerously-skip-permissions \
+      --add-dir "$WORKSPACE" "${GD_ARGS[@]}" \
+      --print-timeout "${AGY_PRINT_TIMEOUT:-10m}" --log-file "$RUN_DIR/analysis_agy.log" \
+      < /dev/null \
+      > "$RUN_DIR/analysis_stdout.txt" 2>> "$RUN_DIR/analysis_stderr.txt"
   fi
 ) || ANALYSIS_EXIT=$?
 echo "--> Self-analysis agent exited: code=$ANALYSIS_EXIT"
@@ -122,6 +138,15 @@ try:
     if agent_id.startswith("claude-"):
         d = json.load(open(os.path.join(run_dir, "analysis_stdout.json")))
         text = d.get("result") or d.get("text") or ""
+    elif agent_id.startswith("gemini-"):
+        d = json.load(open(os.path.join(run_dir, "analysis_stdout.json")))
+        text = d.get("response") or ""
+    elif agent_id.startswith("agy"):
+        # agy stdout is narrative; the reflection text is the tail after any task noise.
+        raw = open(os.path.join(run_dir, "analysis_stdout.txt")).read()
+        text = "\n".join(l for l in raw.splitlines()
+                         if not l.startswith(("Condition ", "Received message from task",
+                                              "--- OUTPUT ---", "--- STATUS ---")))
     else:  # codex JSONL — take the last agent/assistant message
         last = ""
         for line in open(os.path.join(run_dir, "analysis_transcript.jsonl")):

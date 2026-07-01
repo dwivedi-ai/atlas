@@ -34,6 +34,29 @@ def _claude_md() -> str:
     return "# CLAUDE.md\n\nImports the root operating contract for Claude Code:\n\n@AGENTS.md\n"
 
 
+def _native_context(model: str) -> tuple[str, str]:
+    """The agent-native root context file for the E4/E5/E6 scaffold, by model.
+
+    gemini reads GEMINI.md; claude (and, inertly, codex) read CLAUDE.md. Both point at
+    the AGENTS.md rail so the scaffold's content lives in one place.
+    """
+    m = (model or "").lower()
+    if m.startswith("gemini") or m == "google":
+        return "GEMINI.md", (
+            "# GEMINI.md\n\nProject operating context for Gemini CLI. "
+            "See @AGENTS.md for the full operating contract.\n"
+        )
+    if m.startswith("agy") or m == "antigravity":
+        # agy auto-loads <workspace>/.agents/AGENTS.md (verified); root AGENTS.md is NOT
+        # auto-injected, so point the auto-loaded file at the rest of the scaffold.
+        return ".agents/AGENTS.md", (
+            "# AGENTS.md — Antigravity workspace rules\n\n"
+            "Project operating context. Read the repository's AGENTS.md and PROJECT.md for the "
+            "full operating contract, conventions, and architecture before making changes.\n"
+        )
+    return "CLAUDE.md", _claude_md()
+
+
 def _xo_files() -> dict:
     return {
         ".xo/project.json": json.dumps({"name": "project", "schema": "1"}, indent=2),
@@ -88,6 +111,12 @@ def _generate_artifacts(job_dir: Path, spec: dict, needed: list[str]) -> Path:
             print(f"[ctx] generating {art} …")
             text, _ = agent.run_text(model, ladder.ARTIFACT_PROMPTS[art], scratch, max_seconds)
             src = scratch / art
+            # agy writes new files flat in its scratch (harvested to the worktree root),
+            # so a nested artifact (memory/semantic/…) may land under its basename — try that.
+            if not (src.exists() and src.stat().st_size > 0):
+                alt = scratch / Path(art).name
+                if alt.exists() and alt.stat().st_size > 0:
+                    src = alt
             dest.parent.mkdir(parents=True, exist_ok=True)
             if src.exists() and src.stat().st_size > 0:
                 shutil.copyfile(src, dest)
@@ -115,7 +144,7 @@ def _copy(art_dir: Path, edir: Path, rel: str) -> None:
         shutil.copyfile(src, dst)
 
 
-def _compose_env(env: str, art_dir: Path, edir: Path) -> None:
+def _compose_env(env: str, art_dir: Path, edir: Path, model: str = "claude") -> None:
     spec = ladder.ENV_SPEC[env]
     if edir.exists():
         shutil.rmtree(edir)
@@ -123,7 +152,8 @@ def _compose_env(env: str, art_dir: Path, edir: Path) -> None:
     for f in spec.get("files", []):
         _copy(art_dir, edir, f)
     if spec.get("claude_md"):
-        _write(edir, "CLAUDE.md", _claude_md())
+        fname, content = _native_context(model)
+        _write(edir, fname, content)
     if spec.get("memory_skeleton"):
         for rel, c in _memory_skeleton().items():
             _write(edir, rel, c)
@@ -164,7 +194,7 @@ def generate(job_dir: Path) -> dict:
         print("[ctx] only E0 (bare) — no artifacts to generate")
 
     for env in envs:
-        _compose_env(env, art_dir, env_root / env)
+        _compose_env(env, art_dir, env_root / env, spec.get("model", "claude"))
     print(f"[ctx] environments ready: {', '.join(envs)}")
     return {"environments": envs, "artifacts": needed}
 

@@ -59,9 +59,10 @@ echo "--> Creating worktree at $SHA"
 if [[ "${MULTIENV:-0}" == "1" ]]; then
   echo "--> Applying environment overlay: $ENV_ID"
   ( cd "$WORKSPACE"
-    for f in README.md AGENTS.md CLAUDE.md PROJECT.md PLAN.md PROGRESS.md \
+    for f in README.md AGENTS.md CLAUDE.md GEMINI.md PROJECT.md PLAN.md PROGRESS.md \
              OBJECTIVES.md CONTRIBUTING.md DEVELOPING.md; do rm -f "$f"; done
-    find . -path ./.git -prune -o \( -name AGENTS.md -o -name CLAUDE.md \) -print -delete 2>/dev/null || true
+    rm -rf .agents   # agy's native context dir (.agents/AGENTS.md) — strip so E0 is bare
+    find . -path ./.git -prune -o \( -name AGENTS.md -o -name CLAUDE.md -o -name GEMINI.md \) -print -delete 2>/dev/null || true
   )
   OVERLAY_DIR="$JOB_DIR/environments/$ENV_ID"
   if [[ -d "$OVERLAY_DIR" ]] && [[ -n "$(find "$OVERLAY_DIR" -type f 2>/dev/null)" ]]; then
@@ -81,6 +82,36 @@ if [[ -x "$VENV/bin/python" ]]; then
   EXCLUDE_FILE="$(git -C "$WORKSPACE" rev-parse --git-path info/exclude)"
   grep -qxF '/venv' "$EXCLUDE_FILE" 2>/dev/null || echo '/venv' >> "$EXCLUDE_FILE"
   echo "--> Linked venv -> ./venv (git-excluded)"
+fi
+
+# ── Back up Gemini settings (gemini only; no hook — restored in teardown) ──
+# A reported headless bug can rewrite ~/.gemini/settings.json's auth type; backing it
+# up + restoring it (mirrors the claude pattern) neutralizes that regardless.
+if [[ "$AGENT_ID" == gemini-* ]]; then
+  GEM_SETTINGS="$HOME/.gemini/settings.json"
+  [[ -f "$GEM_SETTINGS" ]] && cp "$GEM_SETTINGS" "$RUN_DIR/gemini_settings_backup.json"
+fi
+
+# ── Seed an isolated agy home (agy only) so trials don't share global state ──
+# --gemini_dir points agy's whole state base at this per-run dir; seed it with just the
+# auth + onboarding files so it authenticates without a login and leaves knowledge/,
+# conversations/, brain/ fresh per run (no cross-trial contamination). See AGY_DOCS.md §11.
+if [[ "$AGENT_ID" == agy* ]]; then
+  AGY_SRC="$HOME/.gemini/antigravity-cli"
+  AGY_HOME="$RUN_DIR/agy_home"
+  mkdir -p "$AGY_HOME/antigravity-cli/cache"
+  for f in antigravity-oauth-token settings.json jetski_state.pbtxt installation_id; do
+    [[ -f "$AGY_SRC/$f" ]] && cp "$AGY_SRC/$f" "$AGY_HOME/antigravity-cli/$f"
+  done
+  for f in onboarding.json default_project_id.txt; do
+    [[ -f "$AGY_SRC/cache/$f" ]] && cp "$AGY_SRC/cache/$f" "$AGY_HOME/antigravity-cli/cache/$f"
+  done
+  if [[ -f "$AGY_HOME/antigravity-cli/antigravity-oauth-token" ]]; then
+    echo "--> Seeded isolated agy home: $AGY_HOME"
+  else
+    echo "--> WARN: no antigravity-oauth-token to seed — agy will use the shared ~/.gemini state" >&2
+    rm -rf "$AGY_HOME"
+  fi
 fi
 
 # ── Install Claude Code logging hooks (claude only; backed up, restored in teardown) ──

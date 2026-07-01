@@ -93,7 +93,7 @@ def main() -> None:
             break
         _p()
 
-    model = ask_choice("Model", ["codex", "claude"], "codex")
+    model = ask_choice("Model", ["codex", "claude", "gemini", "agy"], "codex")
     _p()
     _p("Context environments — run the task across levels of project context?")
     _p("  E0 bare → E1 +README → E2 +AGENTS → E3 +PROJECT → E4 full-XO → E5 +memory → E6 DOX.")

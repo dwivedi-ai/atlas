@@ -25,7 +25,7 @@ ROOT = LIB.parent
 sys.path.insert(0, str(LIB))
 
 from extract.core import extract, _infer_provider  # noqa: E402
-from extract.adapters import claude_code, codex      # noqa: E402
+from extract.adapters import claude_code, codex, gemini, antigravity  # noqa: E402
 
 SCHEMA_PATH = ROOT / "schemas" / "run_record.schema.json"
 
@@ -50,6 +50,55 @@ def _grade_from_judge(judge: dict | None, agent_exit_code: int) -> dict:
         "score_human": None,
         "ac_results": ac_results,
     }
+
+
+def _overlay_gemini_tokens(run_dir: Path, agent_id: str, run_record: dict) -> None:
+    """Replace summed transcript tokens with the authoritative stdout -o json stats.
+
+    Gemini's stdout stats give the provider's own session totals:
+      stats.models.<id>.tokens = {input, prompt, candidates, cached, thoughts, tool, total}
+    where prompt = input + cached. We map total_input -> prompt (so it INCLUDES cache,
+    matching the claude adapter's convention) and cache_read -> cached. cache_write has
+    no Gemini equivalent (nulled)."""
+    try:
+        sj = json.loads((run_dir / "agent_stdout.json").read_text())
+    except Exception:
+        return
+    models = (sj.get("stats") or {}).get("models") or {}
+    tk = (models.get(agent_id) or next(iter(models.values()), {})).get("tokens")
+    if not tk:
+        return
+    prompt = tk.get("prompt", tk.get("input", 0) + tk.get("cached", 0))
+    cand = tk.get("candidates", 0)
+    cached = tk.get("cached", 0)
+    T = run_record["tokens"]
+    T["total_input"] = prompt
+    T["total_output"] = cand
+    T["cache_read"] = cached
+    T["cache_write"] = 0
+    T["total_effective"] = prompt - int(cached * 0.9) + cand
+
+
+def _overlay_agy_tokens(run_dir: Path, run_record: dict) -> None:
+    """agy token usage lives in conversations/<uuid>.db (gen_metadata protobuf), copied to
+    <run>/agy_conversation.db by teardown. Client-side ESTIMATES: no cache, output excludes
+    hidden reasoning; each turn re-sends context so total_input = Σ per-call (billed upper bound)."""
+    db = run_dir / "agy_conversation.db"
+    if not db.exists():
+        return
+    try:
+        import agy  # lib/agy.py
+    except ImportError:
+        return
+    u = agy.extract_tokens(str(db))
+    if not u or not u.get("num_calls"):
+        return
+    T = run_record["tokens"]
+    T["total_input"] = u["total_input"]
+    T["total_output"] = u["total_output"]
+    T["cache_read"] = 0          # agy exposes no cache metric
+    T["cache_write"] = 0
+    T["total_effective"] = u["total_input"] + u["total_output"]
 
 
 def build(run_dir: Path) -> dict:
@@ -84,10 +133,24 @@ def build(run_dir: Path) -> dict:
         events = claude_code.normalize(raw)
     elif provider == "openai":
         events = codex.normalize(raw)
+    elif provider == "google":
+        events = gemini.normalize(raw)
+    elif provider == "antigravity":
+        events = antigravity.normalize(raw)
     else:
         events = []
 
     run_record, event_log = extract(events, enriched, {}, grade)
+
+    # Gemini: per-message transcript tokens may be per-turn or cumulative, so use the
+    # authoritative aggregate from the stdout `-o json` stats instead. No-op on a
+    # timeout (empty/absent stdout) -> the transcript-summed values stand as fallback.
+    if provider == "google":
+        _overlay_gemini_tokens(run_dir, agent_id, run_record)
+    # agy stores NO tokens in the transcript — pull them from the conversation SQLite DB
+    # (client-side estimates; no cache field). See AGY_DOCS.md §6.
+    elif provider == "antigravity":
+        _overlay_agy_tokens(run_dir, run_record)
 
     # Generalized fields the experiment record didn't carry.
     run_record["condition"]["repo_url"] = meta.get("repo_url") or meta.get("repo_path")

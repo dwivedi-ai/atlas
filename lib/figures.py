@@ -57,7 +57,11 @@ def collect(job_dir: Path) -> list[dict]:
         runs.append({
             "env": d["condition"].get("env_id", "E0"),
             "task": d["condition"].get("task_id", "t1"),
-            "model": "codex" if aid.startswith("codex") else ("claude" if aid.startswith("claude") else aid or "agent"),
+            "model": ("codex" if aid.startswith("codex")
+                      else "claude" if aid.startswith("claude")
+                      else "gemini" if aid.startswith("gemini")
+                      else "agy" if aid.startswith("agy")
+                      else (aid or "agent")),
             "input": d["tokens"].get("total_input") or 0,
             "files": [f for f in accessed if _is_path(f)],
         })

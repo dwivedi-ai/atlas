@@ -384,6 +384,10 @@ def _infer_provider(agent_id: str) -> str:
         return "anthropic"
     if agent_id in ("codex", "gpt-4", "gpt-4o"):
         return "openai"
+    if agent_id.startswith("gemini"):
+        return "google"
+    if agent_id.startswith("agy"):
+        return "antigravity"
     return "other"
 
 

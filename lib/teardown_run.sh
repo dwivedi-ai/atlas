@@ -70,6 +70,39 @@ elif [[ "$AGENT_ID" == "codex" ]]; then
   else
     echo "--> Codex transcript: $(wc -l < "$RUN_DIR/transcript.jsonl") events"
   fi
+elif [[ "$AGENT_ID" == gemini-* ]]; then
+  # Gemini writes ~/.gemini/tmp/<projectName>/chats/session-<ts>-<first8ofUUID>.jsonl
+  # (dir is a NAME not a hash; filename holds only the first 8 of the UUID). Locate by
+  # the session_id echoed in the -o json stdout; fall back to newest (safe: gemini is
+  # serial, so only one session is in flight).
+  SID="$(python3 -c "import json;print(json.load(open('$RUN_DIR/agent_stdout.json')).get('session_id',''))" 2>/dev/null || true)"
+  GEM_TMP="$HOME/.gemini/tmp"; FOUND=""
+  if [[ -n "$SID" ]]; then
+    FOUND="$(ls -t "$GEM_TMP"/*/chats/session-*-"${SID:0:8}".jsonl 2>/dev/null | head -1 || true)"
+  fi
+  [[ -z "$FOUND" ]] && FOUND="$(ls -t "$GEM_TMP"/*/chats/session-*.jsonl 2>/dev/null | head -1 || true)"
+  if [[ -n "$FOUND" ]]; then
+    cp "$FOUND" "$RUN_DIR/transcript.jsonl"
+    echo "--> Gemini transcript: $FOUND"
+  else
+    echo '{"type":"error","message":"no gemini transcript found"}' > "$RUN_DIR/transcript.jsonl"
+  fi
+elif [[ "$AGENT_ID" == agy* ]]; then
+  # agy: recover the conversation id (from the --log-file, else last_conversations.json keyed
+  # by the workspace cwd), copy transcript_full.jsonl + the conversation .db (tokens live there).
+  AGY_HOME="$RUN_DIR/agy_home"
+  GD=(); [[ -d "$AGY_HOME/antigravity-cli" ]] && GD=(--gemini-dir "$AGY_HOME")
+  T="$(python3 "$LIB_DIR/agy.py" locate --log "$RUN_DIR/agy.log" --cwd "$WORKSPACE" "${GD[@]}" --what transcript 2>/dev/null || true)"
+  DB="$(python3 "$LIB_DIR/agy.py" locate --log "$RUN_DIR/agy.log" --cwd "$WORKSPACE" "${GD[@]}" --what db 2>/dev/null || true)"
+  if [[ -n "$T" && -f "$T" ]]; then
+    cp "$T" "$RUN_DIR/transcript.jsonl"
+    echo "--> agy transcript: $T"
+  else
+    echo '{"type":"error","message":"no agy transcript found"}' > "$RUN_DIR/transcript.jsonl"
+  fi
+  # WAL-safe snapshot (a plain cp loses gen_metadata rows still in the -wal).
+  [[ -n "$DB" && -f "$DB" ]] && python3 "$LIB_DIR/agy.py" snapshot "$DB" "$RUN_DIR/agy_conversation.db" \
+    && echo "--> agy conversation db: $DB"
 fi
 
 # ── 3. Grade (judge.py --grade against this task's battery) — runs in workspace ──
@@ -116,6 +149,11 @@ CLAUDE_SETTINGS_BACKUP="$RUN_DIR/claude_settings_backup.json"
 if [[ -f "$CLAUDE_SETTINGS_BACKUP" ]]; then
   cp "$CLAUDE_SETTINGS_BACKUP" "$CLAUDE_SETTINGS"
   echo "--> Restored Claude settings"
+fi
+GEM_SETTINGS_BACKUP="$RUN_DIR/gemini_settings_backup.json"
+if [[ -f "$GEM_SETTINGS_BACKUP" ]]; then
+  cp "$GEM_SETTINGS_BACKUP" "$HOME/.gemini/settings.json"
+  echo "--> Restored Gemini settings"
 fi
 
 # ── 6. Remove the worktree (keep git.patch) ──────────────────────────────────

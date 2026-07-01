@@ -30,12 +30,26 @@ MULTIENV=0; [[ ${#ENV_IDS[@]} -gt 1 ]] && MULTIENV=1
 case "$MODEL" in
   codex|openai)                                  AGENT_ID="codex";;
   claude|sonnet|claude-sonnet|claude-sonnet-4-6) AGENT_ID="claude-sonnet-4-6";;
-  *) echo "ERROR: unknown model: '$MODEL' (use codex|claude)" >&2; exit 1;;
+  gemini|google|gemini-2.5-pro)                  AGENT_ID="gemini-2.5-pro";;
+  gemini-2.5-flash|gemini-flash)                 AGENT_ID="gemini-2.5-flash";;
+  gemini-2.5-flash-lite|gemini-flash-lite)       AGENT_ID="gemini-2.5-flash-lite";;
+  agy|antigravity|agy-flash|agy-flash-low)       AGENT_ID="agy-flash-low";;
+  agy-flash-med|agy-flash-high|agy-pro-low|agy-pro-high|agy-sonnet|agy-opus|agy-gpt-oss) AGENT_ID="$MODEL";;
+  agy-pro)                                       AGENT_ID="agy-pro-low";;
+  *) echo "ERROR: unknown model: '$MODEL' (use codex|claude|gemini|agy)" >&2; exit 1;;
 esac
 AGENT_DASH="$(echo "$AGENT_ID" | tr '.' '-')"
 
 if [[ "$AGENT_ID" == codex ]]; then
   command -v codex >/dev/null || { echo "ERROR: 'codex' not found on PATH. Run 'codex login' first." >&2; exit 1; }
+elif [[ "$AGENT_ID" == gemini-* ]]; then
+  command -v gemini >/dev/null || { echo "ERROR: 'gemini' not found on PATH. Authenticate gemini first." >&2; exit 1; }
+  if [[ "$JOBS" != "1" ]]; then echo "NOTE: gemini is serial for v1 (shared ~/.gemini state) — forcing --jobs 1." >&2; fi
+  JOBS=1
+elif [[ "$AGENT_ID" == agy* ]]; then
+  command -v agy >/dev/null || { echo "ERROR: 'agy' not found on PATH. Install/authenticate Antigravity first." >&2; exit 1; }
+  if [[ "$JOBS" != "1" ]]; then echo "NOTE: agy is serial for v1 (shared antigravity-cli state; per-run --gemini_dir isolation) — forcing --jobs 1." >&2; fi
+  JOBS=1
 else
   command -v claude >/dev/null || { echo "ERROR: 'claude' not found on PATH. Run 'claude login' first." >&2; exit 1; }
   if [[ "$JOBS" != "1" ]]; then echo "NOTE: claude is serial (hook race) — forcing --jobs 1." >&2; fi

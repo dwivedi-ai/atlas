@@ -16,10 +16,12 @@
 # Flags
 #   --repo <url> | --path <dir>    Repository source (one required, unless --job).
 #   --ref <ref>                    Branch/tag/SHA (default: HEAD).
+#                                  (Agents: codex parallel; claude + gemini serial.)
 #   --task <text> | --task-file F  The task handed to the agent.
 #   --accept <text> | --accept-file F   The NL acceptance handed to the judge.
 #   --tasks-file <f>               YAML/JSON list of {id?, task, accept} for a multi-task job.
-#   --model <codex|claude>         Agent (default: codex).
+#   --model <codex|claude|gemini|agy>  Agent (default: codex; gemini + agy run serial in v1).
+#                                  (agy = Antigravity CLI; e.g. agy, agy-flash-low, agy-pro, agy-sonnet, agy-opus.)
 #   --envs <E0,...,E6>            Context environments (default: all 7, E0..E6).
 #   --jobs <n>                     Max concurrent cells for codex (default: 4; claude forced 1).
 #   --reps <n>                     Runs per task × environment (default: 1).

@@ -32,7 +32,7 @@
         "task_id":          { "type": "string" },
         "env_id":           { "type": "string" },
         "agent_id":         { "type": "string" },
-        "agent_provider":   { "type": "string", "enum": ["anthropic", "openai", "google", "other"] },
+        "agent_provider":   { "type": "string", "enum": ["anthropic", "openai", "google", "antigravity", "other"] },
         "base_repo_sha":    { "type": "string" },
         "repo_url":         { "type": ["string", "null"] },
         "env_overlay_hash": { "type": ["string", "null"] }

@@ -50,7 +50,7 @@
       }
     },
 
-    "model":  { "type": "string", "enum": ["codex", "claude", "claude-sonnet-4-6"] },
+    "model":  { "type": "string", "enum": ["codex", "claude", "claude-sonnet-4-6", "gemini", "gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite", "agy", "agy-flash-low", "agy-flash-med", "agy-flash-high", "agy-pro-low", "agy-pro-high", "agy-sonnet", "agy-opus", "agy-gpt-oss"] },
     "reps":   { "type": "integer", "minimum": 1, "default": 1 },
     "max_seconds": { "type": "integer", "minimum": 0, "default": 0 },
     "judge_votes": { "type": "integer", "minimum": 1, "default": 1 },
