@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 """
-wizard.py — interactive job authoring. Asks the four questions (repo, task,
-acceptance, model) plus a couple of optional knobs, then writes a validated
-jobs/<id>/job.yaml and prints the job dir to stdout.
+wizard.py — interactive job authoring. Asks for repo, task(s), acceptance, model,
+environments, then writes a validated jobs/<id>/job.yaml.
 
-Multi-line answers (task / acceptance): type the text, then a single line with
-just "." to finish. Defaults are shown in [brackets]; press Enter to accept.
+IMPORTANT: run.sh captures this program's STDOUT via `$(...)` to learn the job dir,
+so every user-facing prompt/message goes to STDERR and ONLY the final job-dir path
+is printed to STDOUT. (If prompts went to stdout they'd be swallowed by the command
+substitution and the wizard would look hung.)
+
+Multi-line answers (task / acceptance): type the text, then a single line with just
+"." to finish. Defaults are shown in [brackets]; press Enter to accept.
 """
 from __future__ import annotations
 
@@ -15,20 +19,30 @@ from pathlib import Path
 import jobspec
 
 
+def _p(msg: str = "") -> None:
+    print(msg, file=sys.stderr, flush=True)
+
+
 def ask(prompt: str, default: str | None = None) -> str:
     suffix = f" [{default}]" if default else ""
     while True:
-        val = input(f"{prompt}{suffix}: ").strip()
+        sys.stderr.write(f"{prompt}{suffix}: "); sys.stderr.flush()
+        try:
+            val = input().strip()
+        except EOFError:
+            if default is not None:
+                return default
+            _p(""); sys.exit(1)
         if val:
             return val
         if default is not None:
             return default
-        print("  (required)")
+        _p("  (required)")
 
 
 def ask_multiline(prompt: str) -> str:
-    print(f"{prompt}")
-    print('  (enter text; finish with a single line containing only ".")')
+    _p(prompt)
+    _p('  (enter text; finish with a single line containing only ".")')
     lines: list[str] = []
     while True:
         try:
@@ -44,47 +58,52 @@ def ask_multiline(prompt: str) -> str:
 def ask_choice(prompt: str, choices: list[str], default: str) -> str:
     opts = "/".join(choices)
     while True:
-        val = input(f"{prompt} ({opts}) [{default}]: ").strip().lower()
+        sys.stderr.write(f"{prompt} ({opts}) [{default}]: "); sys.stderr.flush()
+        try:
+            val = input().strip().lower()
+        except EOFError:
+            return default
         if not val:
             return default
         if val in choices:
             return val
-        print(f"  choose one of: {opts}")
+        _p(f"  choose one of: {opts}")
 
 
 def main() -> None:
-    print("── exp-runner: new job ──────────────────────────────────────────")
+    _p("── exp-runner: new job ──────────────────────────────────────────")
     src = ask("Repository (git URL or local path)")
-    is_path = Path(src).expanduser().exists() and not src.endswith(".git") or src.startswith(("/", "./", "../", "~"))
+    is_path = (Path(src).expanduser().exists() and not src.endswith(".git")) or src.startswith(("/", "./", "../", "~"))
     ref = ask("Ref (branch / tag / SHA)", "HEAD")
-    print()
+    _p()
 
     tasks = []
     while True:
         n = len(tasks) + 1
         task = ask_multiline(f"Task #{n} — what should the agent do?")
         if not task:
-            print("ERROR: a task is required", file=sys.stderr); sys.exit(1)
-        print()
+            _p("ERROR: a task is required"); sys.exit(1)
+        _p()
         accept = ask_multiline(f"Acceptance #{n} — what does a correct solution look like? (graded, never shown to the agent)")
         if not accept:
-            print("ERROR: an acceptance is required", file=sys.stderr); sys.exit(1)
+            _p("ERROR: an acceptance is required"); sys.exit(1)
         tasks.append({"id": f"t{n}", "task": task, "accept": accept})
-        print()
+        _p()
         if ask_choice("Add another task to this job?", ["y", "n"], "n") == "n":
             break
-        print()
+        _p()
 
     model = ask_choice("Model", ["codex", "claude"], "codex")
-    print()
-    print("Context environments — compare the task across levels of project context?")
-    print("  E0 bare → E1 +README → E2 +AGENTS → E3 +full scaffold (agent-written for your repo).")
-    ladder = ask_choice("Run the E0→E3 context ladder? (else just E0, repo as-is)", ["y", "n"], "n") == "y"
-    environments = ["E0", "E1", "E2", "E3"] if ladder else ["E0"]
-    reps = ask("Reps (runs per task × environment)", "3" if ladder else "1")
-    # A context experiment is about cost across environments — skip the per-run
-    # self-analysis by default to keep the (larger) matrix lean.
-    if ladder:
+    _p()
+    _p("Context environments — run the task across levels of project context?")
+    _p("  E0 bare → E1 +README → E2 +AGENTS → E3 +PROJECT → E4 full-XO → E5 +memory → E6 DOX.")
+    _p("  The runner sets up each environment for YOUR repo (agent-written docs), then runs the task in all of them.")
+    all7 = ask_choice("Run across all 7 environments E0..E6? (else just E0, repo as-is)", ["y", "n"], "y") == "y"
+    environments = ["E0", "E1", "E2", "E3", "E4", "E5", "E6"] if all7 else ["E0"]
+    reps = ask("Reps (runs per task × environment)", "1")
+    # A multi-environment run is a cost experiment — skip the per-run self-analysis
+    # by default to keep the (larger) matrix lean.
+    if all7:
         analyze = False
     else:
         analyze = ask_choice("Have the agent write a self-analysis after grading?", ["y", "n"], "y") == "y"
@@ -112,11 +131,11 @@ def main() -> None:
     try:
         job_dir = jobspec.write(spec)
     except ValueError as e:
-        print(f"ERROR: {e}", file=sys.stderr); sys.exit(1)
+        _p(f"ERROR: {e}"); sys.exit(1)
 
-    print()
-    print(f"✓ wrote {job_dir}/job.yaml")
-    print(job_dir)
+    _p("")
+    _p(f"✓ wrote {job_dir}/job.yaml")
+    print(job_dir)   # <-- the ONLY thing on stdout (captured by run.sh)
 
 
 if __name__ == "__main__":
