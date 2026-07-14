@@ -1,0 +1,624 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0b0c0f">
+<title>exp-runner · jobs</title>
+<style>
+:root{
+  --bg:#0b0c0f; --bg2:#101318; --bg3:#161a21; --panel:#12151b;
+  --line:#1f242d; --line2:#2a313d;
+  --ink:#e9e4d9; --ink2:#b3ada0; --ink3:#7d786d;
+  --acc:#a8d94f; --acc2:#83d63a;
+  --blue:#4c72b0; --red:#c44e52; --amber:#e0a54f; --green:#6bbf6b; --gray:#6a7078;
+  --mono:ui-monospace,"SF Mono",Menlo,monospace;
+  --serif:"Iowan Old Style",Georgia,"Times New Roman",serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--ink);font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+  -webkit-font-smoothing:antialiased}
+a{color:var(--acc);text-decoration:none}
+h1,h2,h3{font-weight:600;margin:0}
+.mono{font-family:var(--mono)}
+button{font:inherit;cursor:pointer}
+
+/* topbar */
+header{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:16px;
+  padding:14px 26px;background:linear-gradient(#0b0c0fdd,#0b0c0fbb);
+  backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:baseline;gap:10px}
+.brand .dot{width:9px;height:9px;border-radius:50%;background:var(--acc);box-shadow:0 0 12px var(--acc)}
+.brand h1{font-size:16px;letter-spacing:.02em}
+.brand .sub{color:var(--ink3);font-size:12px;font-family:var(--mono)}
+header .grow{flex:1}
+.crumb{color:var(--ink3);font-size:13px;font-family:var(--mono)}
+.crumb b{color:var(--ink2)}
+.backbtn{background:var(--bg3);border:1px solid var(--line2);color:var(--ink2);
+  border-radius:7px;padding:6px 12px}
+.backbtn:hover{border-color:var(--acc);color:var(--ink)}
+
+main{max-width:1240px;margin:0 auto;padding:26px}
+.eyebrow{color:var(--acc);font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;margin-bottom:8px}
+
+/* totals strip */
+.totals{display:flex;gap:22px;flex-wrap:wrap;margin:6px 0 26px;padding:16px 20px;
+  background:var(--bg2);border:1px solid var(--line);border-radius:12px}
+.tile .k{font-family:var(--mono);font-size:11px;color:var(--ink3);letter-spacing:.08em;text-transform:uppercase}
+.tile .v{font-size:24px;font-weight:600;line-height:1.2}
+.tile .v small{font-size:13px;color:var(--ink3);font-weight:400}
+
+/* job cards */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px}
+.card{background:var(--bg2);border:1px solid var(--line);border-radius:12px;padding:18px;
+  cursor:pointer;transition:.15s;position:relative;overflow:hidden}
+.card:hover{border-color:var(--acc);transform:translateY(-2px);box-shadow:0 8px 30px #0008}
+.card .top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.card h3{font-size:16px;font-family:var(--mono)}
+.card .task{color:var(--ink2);font-size:13px;margin:8px 0 12px;min-height:38px}
+.card .row{display:flex;align-items:center;gap:14px;margin-top:10px}
+.chip{font-family:var(--mono);font-size:11px;padding:3px 8px;border-radius:20px;
+  border:1px solid var(--line2);color:var(--ink2);background:var(--bg3)}
+.chip.model{color:#0b0c0f;background:var(--acc);border-color:var(--acc);font-weight:600}
+.ring{--p:0;width:52px;height:52px;border-radius:50%;flex:none;
+  background:conic-gradient(var(--acc) calc(var(--p)*1%),#242a33 0);
+  display:grid;place-items:center}
+.ring::after{content:"";width:40px;height:40px;border-radius:50%;background:var(--bg2)}
+.ring span{position:absolute;font-family:var(--mono);font-size:12px;font-weight:600}
+.spark{display:block;width:100%;height:46px;margin-top:12px}
+.stat{display:flex;flex-direction:column}
+.stat .k{font-family:var(--mono);font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:.06em}
+.stat .v{font-family:var(--mono);font-size:14px;color:var(--ink)}
+
+/* job view */
+.jhead{display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap;margin-bottom:20px}
+.jhead .meta{flex:1;min-width:280px}
+.jhead h2{font-size:22px;font-family:var(--mono);margin-bottom:6px}
+.jhead .repo{color:var(--ink3);font-family:var(--mono);font-size:12px;word-break:break-all}
+.task-box{background:var(--bg2);border:1px solid var(--line);border-left:2px solid var(--acc);
+  border-radius:8px;padding:12px 15px;margin-top:12px}
+.task-box .lab{font-family:var(--mono);font-size:11px;color:var(--acc);text-transform:uppercase;letter-spacing:.1em}
+.task-box .accept{color:var(--ink3);font-size:12px;margin-top:6px}
+
+.kpis{display:flex;gap:14px;flex-wrap:wrap}
+.kpi{background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:12px 16px;min-width:120px}
+.kpi .k{font-family:var(--mono);font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:.08em}
+.kpi .v{font-size:20px;font-weight:600;margin-top:2px}
+
+.panels{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:22px 0}
+@media(max-width:900px){.panels{grid-template-columns:1fr}}
+.panel{background:var(--bg2);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+.panel h3{font-size:13px;color:var(--ink2);margin-bottom:4px}
+.panel .hint{color:var(--ink3);font-size:11px;font-family:var(--mono);margin-bottom:10px}
+.panel canvas{display:block;width:100%}
+
+/* matrix */
+.matrix{margin:8px 0 22px}
+.mrow{display:flex;align-items:stretch;gap:10px;margin-bottom:8px}
+.mlab{width:96px;flex:none;display:flex;flex-direction:column;justify-content:center;
+  font-family:var(--mono);font-size:12px;color:var(--ink2)}
+.mlab small{color:var(--ink3);font-size:10px}
+.cells{display:flex;gap:8px;flex-wrap:wrap;flex:1}
+.cell{background:var(--bg2);border:1px solid var(--line);border-left-width:3px;border-radius:8px;
+  padding:8px 10px;min-width:150px;cursor:pointer;transition:.12s;flex:1}
+.cell:hover{border-color:var(--acc);background:var(--bg3)}
+.cell.sel{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc)}
+.cell .cw{display:flex;justify-content:space-between;align-items:center}
+.cell .vd{font-family:var(--mono);font-size:11px;font-weight:600}
+.cell .sc{font-family:var(--mono);font-size:12px;color:var(--ink2)}
+.cell .tk{font-family:var(--mono);font-size:10px;color:var(--ink3)}
+.cell canvas{display:block;width:100%;height:26px;margin-top:5px}
+
+/* tables */
+.tables{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+@media(max-width:900px){.tables{grid-template-columns:1fr}}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{text-align:left;padding:7px 9px;border-bottom:1px solid var(--line)}
+th{font-family:var(--mono);font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:.06em;font-weight:500}
+td.num,th.num{text-align:right;font-family:var(--mono)}
+
+/* figures */
+.figs{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:22px}
+@media(max-width:900px){.figs{grid-template-columns:1fr}}
+.figs img{width:100%;border-radius:10px;border:1px solid var(--line);background:#fff}
+
+/* run drawer */
+#drawer{position:fixed;top:0;right:0;width:min(460px,94vw);height:100%;z-index:40;
+  background:var(--panel);border-left:1px solid var(--line2);box-shadow:-20px 0 60px #000a;
+  transform:translateX(102%);transition:transform .22s ease;overflow-y:auto}
+#drawer.open{transform:none}
+#drawer .dh{position:sticky;top:0;background:var(--panel);padding:16px 20px;border-bottom:1px solid var(--line);
+  display:flex;justify-content:space-between;align-items:center;gap:10px}
+#drawer .dh .x{background:none;border:none;color:var(--ink3);font-size:20px;line-height:1}
+#drawer .body{padding:18px 20px}
+.badge{font-family:var(--mono);font-size:11px;font-weight:600;padding:3px 9px;border-radius:6px}
+.vgrid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin:14px 0}
+.vgrid .c .k{font-family:var(--mono);font-size:9.5px;color:var(--ink3);text-transform:uppercase;letter-spacing:.05em}
+.vgrid .c .v{font-family:var(--mono);font-size:15px;color:var(--ink)}
+.sec{margin-top:18px}
+.sec .st{font-family:var(--mono);font-size:11px;color:var(--acc);text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px}
+.phasebar{display:flex;height:24px;border-radius:6px;overflow:hidden;border:1px solid var(--line2)}
+.phasebar span{display:flex;align-items:center;justify-content:center;font-size:10px;color:#0b0c0f;font-family:var(--mono);overflow:hidden}
+.legend{display:flex;gap:14px;margin-top:6px;font-size:11px;color:var(--ink3);font-family:var(--mono)}
+.legend i{width:9px;height:9px;border-radius:2px;display:inline-block;margin-right:4px;vertical-align:middle}
+.crit{display:flex;gap:9px;padding:8px 0;border-bottom:1px solid var(--line)}
+.crit .mk{font-family:var(--mono);font-weight:700;flex:none}
+.crit .txt{font-size:12.5px}
+.crit .src{font-family:var(--mono);font-size:10px;color:var(--ink3)}
+.crit .ev{font-size:11px;color:var(--ink3);margin-top:3px;word-break:break-word}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.fchip{font-family:var(--mono);font-size:11px;padding:3px 8px;border-radius:6px;background:var(--bg3);
+  border:1px solid var(--line2);color:var(--amber)}
+.kv{display:grid;grid-template-columns:1fr 1fr;gap:6px 16px;font-family:var(--mono);font-size:12px}
+.kv .r{display:flex;justify-content:space-between;border-bottom:1px dotted var(--line);padding-bottom:3px}
+.kv .r span:first-child{color:var(--ink3)}
+.nav-flags{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.flag{font-family:var(--mono);font-size:10px;padding:3px 8px;border-radius:20px;border:1px solid var(--line2)}
+.flag.on{color:var(--acc);border-color:var(--acc)}
+.flag.off{color:var(--ink3)}
+.na{color:var(--ink3);font-size:12px;background:var(--bg3);border:1px solid var(--line);
+  border-radius:8px;padding:10px 12px;line-height:1.5}
+.na b{color:var(--ink2)}
+
+.loading,.empty{color:var(--ink3);font-family:var(--mono);padding:40px;text-align:center}
+.scrim{position:fixed;inset:0;background:#0007;z-index:35;opacity:0;pointer-events:none;transition:.2s}
+.scrim.on{opacity:1;pointer-events:auto}
+footer{color:var(--ink3);font-family:var(--mono);font-size:11px;text-align:center;padding:30px}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><span class="dot"></span><h1>exp-runner</h1><span class="sub">context-ladder jobs</span></div>
+  <div class="grow"></div>
+  <div class="crumb" id="crumb"></div>
+  <button class="backbtn" id="back" style="display:none">← all jobs</button>
+</header>
+<main id="app"><div class="loading">loading…</div></main>
+<footer id="foot"></footer>
+
+<div class="scrim" id="scrim"></div>
+<aside id="drawer"><div class="dh"><div id="dtitle"></div><button class="x" id="dclose">✕</button></div><div class="body" id="dbody"></div></aside>
+
+<script>
+'use strict';
+const $=(s,r=document)=>r.querySelector(s);
+const el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
+const ENVLAB={E0:'bare',E1:'+README',E2:'+AGENTS',E3:'+PROJECT',E4:'full-XO',E5:'+memory',E6:'DOX'};
+const VCOL={accepted:'var(--green)',partial:'var(--amber)',rejected:'var(--red)',timeout:'var(--gray)',error:'var(--gray)'};
+const VHEX={accepted:'#6bbf6b',partial:'#e0a54f',rejected:'#c44e52',timeout:'#6a7078',error:'#6a7078'};
+const fmt=n=>n==null?'—':n>=1e6?(n/1e6).toFixed(2)+'M':n>=1e3?(n/1e3).toFixed(1)+'K':String(Math.round(n));
+const f2=n=>n==null?'—':(+n).toFixed(2);
+const f3=n=>n==null?'—':(+n).toFixed(3);
+const pctf=n=>n==null?'—':Math.round(n*100)+'%';
+const PHC={orient:'#4c72b0',impl:'#a8d94f',verif:'#e0a54f'};
+const secs=s=>s==null?'—':s<60?Math.round(s)+'s':Math.floor(s/60)+'m '+Math.round(s%60)+'s';
+
+function mkcv(host,w,h){
+  const d=Math.min(2,devicePixelRatio||1);
+  const c=el('canvas');c.width=w*d;c.height=h*d;c.style.width=w+'px';c.style.height=h+'px';
+  host.appendChild(c);const x=c.getContext('2d');x.scale(d,d);return[x,w,h,c];
+}
+function envColor(env){return env==='E6'?'#c44e52':'#4c72b0';}
+function envRamp(i,n){ // blue→teal→green sequential
+  const t=n<=1?0:i/(n-1);
+  const a=[76,114,176],b=[131,214,58];
+  return`rgb(${a.map((v,k)=>Math.round(v+(b[k]-v)*t)).join(',')})`;
+}
+
+/* ---------- ATLAS ---------- */
+async function atlas(){
+  $('#back').style.display='none';$('#crumb').innerHTML='';
+  const app=$('#app');app.innerHTML='<div class="loading">loading jobs…</div>';
+  let d;try{d=await(await fetch('/api/jobs')).json();}catch(e){app.innerHTML='<div class="empty">server offline — run <b>python3 viz/server.py</b></div>';return;}
+  if(!d.jobs.length){app.innerHTML='<div class="empty">No jobs found under jobs/</div>';return;}
+  app.innerHTML='';
+  app.appendChild(el('div','eyebrow','The context experiment · every job'));
+  const t=d.totals;
+  const strip=el('div','totals');
+  [['jobs',t.jobs],['runs',t.runs],['accepted',`${t.accepted}<small>/${t.runs}</small>`],
+   ['input tokens',fmt(t.tokens_input)],['models',t.models.join(' · ')]].forEach(([k,v])=>{
+    const tl=el('div','tile');tl.appendChild(el('div','k',k));tl.appendChild(el('div','v',v));strip.appendChild(tl);
+  });
+  app.appendChild(strip);
+  const grid=el('div','grid');
+  d.jobs.forEach(j=>grid.appendChild(jobCard(j)));
+  app.appendChild(grid);
+  $('#foot').textContent=`generated ${d.generated_at} · read-only over jobs/`;
+}
+
+function jobCard(j){
+  const c=el('div','card');
+  const pct=Math.round(j.accept_rate*100);
+  c.innerHTML=`<div class="top">
+      <h3>${j.id}</h3>
+      <div class="ring" style="--p:${pct}"><span>${pct}%</span></div>
+    </div>
+    <div class="task">${j.task_summary||'<i style="color:var(--ink3)">no task text</i>'}</div>
+    <div class="row">
+      <span class="chip model">${j.model}</span>
+      <span class="chip">${j.envs.length} envs</span>
+      <span class="chip">${j.n_runs} runs</span>
+      <span class="chip">${j.reps} rep</span>
+    </div>`;
+  const spark=el('canvas','spark');c.appendChild(spark);
+  const foot=el('div','row');
+  [['input',fmt(j.tokens_input)],['effective',fmt(j.tokens_effective)],['accepted',`${j.accepted}/${j.n_runs}`]]
+    .forEach(([k,v])=>{const s=el('div','stat');s.appendChild(el('div','k',k));s.appendChild(el('div','v',v));foot.appendChild(s);});
+  c.appendChild(foot);
+  requestAnimationFrame(()=>miniLadder(spark,j.by_env_norm));
+  c.onclick=()=>{location.hash='#/job/'+encodeURIComponent(j.id);};
+  return c;
+}
+function miniLadder(canvas,by){
+  const w=canvas.clientWidth||300,h=46;const[x]=mkcv({appendChild:()=>{}},1,1)&&[canvas.getContext('2d')];
+  const d=Math.min(2,devicePixelRatio||1);canvas.width=w*d;canvas.height=h*d;
+  const cx=canvas.getContext('2d');cx.scale(d,d);
+  const vals=by.map(b=>b.norm||0),vmax=Math.max(1.2,...vals);
+  const bw=(w-4)/by.length;
+  by.forEach((b,i)=>{
+    const bh=(b.norm||0)/vmax*(h-6);
+    cx.fillStyle=envColor(b.env);
+    cx.fillRect(2+i*bw+1,h-bh-2,bw-3,bh);
+  });
+  cx.strokeStyle='#3a4048';cx.setLineDash([2,3]);
+  const y=h-(1/vmax*(h-6))-2;cx.beginPath();cx.moveTo(0,y);cx.lineTo(w,y);cx.stroke();cx.setLineDash([]);
+}
+
+/* ---------- JOB VIEW ---------- */
+let JOB=null;
+async function jobView(id){
+  $('#back').style.display='';$('#crumb').innerHTML=`<b>${id}</b>`;
+  const app=$('#app');app.innerHTML='<div class="loading">loading '+id+'…</div>';
+  let j;try{j=await(await fetch('/api/jobs/'+encodeURIComponent(id))).json();}catch(e){app.innerHTML='<div class="empty">failed to load</div>';return;}
+  if(j.error){app.innerHTML='<div class="empty">'+j.error+'</div>';return;}
+  JOB=j;app.innerHTML='';
+  const acc=j.runs.filter(r=>r.verdict==='accepted').length;
+  const inputs=j.runs.map(r=>r.input);
+  const cheapest=[...j.by_env].filter(e=>e.norm_mean!=null).sort((a,b)=>a.norm_mean-b.norm_mean)[0];
+  const dear=[...j.by_env].filter(e=>e.norm_mean!=null).sort((a,b)=>b.norm_mean-a.norm_mean)[0];
+
+  // header
+  const head=el('div','jhead');
+  const meta=el('div','meta');
+  meta.innerHTML=`<h2>${j.id}</h2>
+    <div class="repo">${j.repo_url||''} ${j.pinned_sha?'· @'+j.pinned_sha.slice(0,10):''}</div>`;
+  (j.tasks||[]).forEach(t=>{
+    const tb=el('div','task-box');
+    tb.innerHTML=`<div class="lab">task ${t.id||''}</div><div>${t.task||''}</div>
+      <div class="accept">accepted when: ${t.accept||'—'}</div>`;
+    meta.appendChild(tb);
+  });
+  head.appendChild(meta);
+  app.appendChild(head);
+
+  // KPIs
+  const kp=el('div','kpis');
+  [['accepted',`${acc}<small style="font-size:13px;color:var(--ink3)">/${j.runs.length}</small>`],
+   ['model',j.model],['reps',j.reps],
+   ['mean input',fmt(inputs.reduce((a,b)=>a+b,0)/inputs.length)],
+   ['cheapest',cheapest?`${cheapest.env} · ${f2(cheapest.norm_mean)}×`:'—'],
+   ['priciest',dear?`${dear.env} · ${f2(dear.norm_mean)}×`:'—']]
+   .forEach(([k,v])=>{const t=el('div','kpi');t.innerHTML=`<div class="k">${k}</div><div class="v">${v}</div>`;kp.appendChild(t);});
+  app.appendChild(kp);
+
+  // charts
+  const panels=el('div','panels');
+  const p1=el('div','panel');p1.innerHTML='<h3>Input-token cost by environment</h3><div class="hint">per-task normalized to E0 = 1.00× · E6 red</div>';
+  const c1=el('canvas');p1.appendChild(c1);panels.appendChild(p1);
+  const p2=el('div','panel');p2.innerHTML='<h3>Cost vs. quality</h3><div class="hint">effective tokens × accept-rate · one point per env, E0→E6</div>';
+  const c2=el('canvas');p2.appendChild(c2);panels.appendChild(p2);
+  app.appendChild(panels);
+
+  // phase activity by environment (l2 fig05 — tool-call share, backend-agnostic)
+  const pap=el('div','panel');pap.style.marginBottom='22px';
+  pap.innerHTML='<h3>Phase activity by environment</h3><div class="hint">share of tool calls per phase (orientation · implementation · verification) — well-defined for every backend</div>';
+  const cpa=el('canvas');pap.appendChild(cpa);app.appendChild(pap);
+  requestAnimationFrame(()=>{drawLadder(c1,j.by_env);drawPareto(c2,j.pareto);drawPhaseByEnv(cpa,j.by_env);});
+
+  // matrix
+  app.appendChild(el('div','eyebrow','the run matrix · click a cell'));
+  app.appendChild(buildMatrix(j));
+
+  // tables
+  const tb=el('div','tables');
+  tb.appendChild(envTable(j.by_env));
+  tb.appendChild(taskTable(j.by_task));
+  app.appendChild(tb);
+
+  // figures (the generated PNGs)
+  if(j.figs&&j.figs.length){
+    app.appendChild(el('div','eyebrow','generated figures'));
+    const fg=el('div','figs');
+    j.figs.forEach(f=>{const i=el('img');i.src='/jobs/'+encodeURIComponent(j.id)+'/agent-analysis/'+f;i.alt=f;fg.appendChild(i);});
+    app.appendChild(fg);
+  }
+  $('#foot').textContent=j.id+' · '+j.runs.length+' runs';
+}
+
+function drawLadder(canvas,by){
+  const w=canvas.clientWidth||520,h=280;const[x]=mkcvInto(canvas,w,h);
+  const P={l:44,r:14,t:16,b:40};
+  const vals=by.map(b=>b.norm_mean||0);
+  const hi=by.map(b=>b.norm_hi||b.norm_mean||0);
+  const vmax=Math.max(2.25,...hi)+.2;
+  const Y=v=>P.t+(h-P.t-P.b)*(1-v/vmax);
+  const bw=(w-P.l-P.r)/by.length;
+  // gridlines
+  x.font='10px '+cssv('--mono');x.textAlign='right';
+  for(let g=0;g<=Math.ceil(vmax);g++){const gy=Y(g);
+    x.strokeStyle='#1b1f27';x.beginPath();x.moveTo(P.l,gy);x.lineTo(w-P.r,gy);x.stroke();
+    x.fillStyle='#5a5850';x.fillText(g+'×',P.l-6,gy+3);}
+  // E0 dashed reference
+  x.strokeStyle='#3a4048';x.setLineDash([4,4]);x.beginPath();x.moveTo(P.l,Y(1));x.lineTo(w-P.r,Y(1));x.stroke();x.setLineDash([]);
+  by.forEach((b,i)=>{
+    const cx=P.l+i*bw+bw/2,v=b.norm_mean||0,y=Y(v);
+    x.fillStyle=envColor(b.env);
+    x.fillRect(cx-bw*0.34,y,bw*0.68,(h-P.b)-y);
+    // CI whisker
+    if(b.norm_hi!=null&&b.norm_lo!=null&&b.norm_hi!==b.norm_lo){
+      x.strokeStyle='#cfc9bd';x.beginPath();x.moveTo(cx,Y(b.norm_lo));x.lineTo(cx,Y(b.norm_hi));x.stroke();}
+    x.fillStyle='#e9e4d9';x.textAlign='center';x.font='bold 11px '+cssv('--mono');
+    x.fillText(v.toFixed(2)+'×',cx,y-6);
+    x.fillStyle='#b3ada0';x.font='10px '+cssv('--mono');
+    x.fillText(b.env,cx,h-24);
+    x.fillStyle='#7d786d';x.font='9px '+cssv('--mono');
+    x.fillText(ENVLAB[b.env]||'',cx,h-12);
+  });
+}
+function drawPareto(canvas,pts){
+  const w=canvas.clientWidth||520,h=280;const[x]=mkcvInto(canvas,w,h);
+  const P={l:48,r:16,t:16,b:38};
+  const xs=pts.map(p=>p.effective_mean||0);
+  const xmin=Math.min(...xs),xmax=Math.max(...xs)||1,pad=(xmax-xmin)*0.12||1;
+  const X=v=>P.l+(w-P.l-P.r)*((v-(xmin-pad))/((xmax+pad)-(xmin-pad)));
+  const Y=v=>P.t+(h-P.t-P.b)*(1-v); // v in 0..1 (accept rate)
+  x.font='10px '+cssv('--mono');
+  for(let g=0;g<=4;g++){const gy=Y(g/4);x.strokeStyle='#1b1f27';x.beginPath();x.moveTo(P.l,gy);x.lineTo(w-P.r,gy);x.stroke();
+    x.fillStyle='#5a5850';x.textAlign='right';x.fillText((g*25)+'%',P.l-6,gy+3);}
+  // connect E0→E6 path
+  x.strokeStyle='#2f3742';x.lineWidth=1.5;x.beginPath();
+  pts.forEach((p,i)=>{const px=X(p.effective_mean||0),py=Y(p.accept_rate||0);i?x.lineTo(px,py):x.moveTo(px,py);});x.stroke();
+  pts.forEach((p,i)=>{
+    const px=X(p.effective_mean||0),py=Y(p.accept_rate||0);
+    x.fillStyle=p.env==='E6'?'#c44e52':envRamp(i,pts.length);
+    x.beginPath();x.arc(px,py,6,0,7);x.fill();
+    x.fillStyle='#cfc9bd';x.textAlign='center';x.font='9px '+cssv('--mono');
+    x.fillText(p.env,px,py-11);
+  });
+  x.fillStyle='#7d786d';x.textAlign='center';x.font='10px '+cssv('--mono');
+  x.fillText('effective tokens →',(P.l+w-P.r)/2,h-6);
+  x.save();x.translate(12,(P.t+h-P.b)/2);x.rotate(-Math.PI/2);x.textAlign='center';x.fillText('accept rate',0,0);x.restore();
+}
+
+function drawPhaseByEnv(canvas,by){
+  const w=canvas.clientWidth||520,h=250;const[x]=mkcvInto(canvas,w,h);
+  const P={l:44,r:14,t:26,b:34},plotH=h-P.t-P.b,bw=(w-P.l-P.r)/by.length;
+  x.font='10px '+cssv('--mono');x.textAlign='right';
+  for(let g=0;g<=4;g++){const gy=P.t+plotH*g/4;x.strokeStyle='#1b1f27';x.beginPath();x.moveTo(P.l,gy);x.lineTo(w-P.r,gy);x.stroke();
+    x.fillStyle='#5a5850';x.fillText((100-g*25)+'%',P.l-6,gy+3);}
+  by.forEach((e,i)=>{
+    const cx=P.l+i*bw+bw/2,bwi=Math.min(46,bw*0.6);
+    if(e.pa_orient==null){
+      x.strokeStyle='#2a313d';x.setLineDash([3,3]);x.strokeRect(cx-bwi/2,P.t,bwi,plotH);x.setLineDash([]);
+      x.fillStyle='#5a5850';x.textAlign='center';x.font='9px '+cssv('--mono');x.fillText('n/a',cx,P.t+plotH/2);
+    }else{
+      let acc=0;
+      [['orient',e.pa_orient],['impl',e.pa_impl],['verif',e.pa_verif]].forEach(([k,v])=>{
+        const segH=(v||0)*plotH,y=P.t+plotH-acc-segH;
+        x.fillStyle=PHC[k];x.fillRect(cx-bwi/2,y,bwi,segH);
+        if((v||0)>0.1){x.fillStyle='#0b0c0f';x.textAlign='center';x.font='9px '+cssv('--mono');x.fillText(Math.round(v*100)+'%',cx,y+segH/2+3);}
+        acc+=segH;
+      });
+    }
+    x.fillStyle='#b3ada0';x.textAlign='center';x.font='10px '+cssv('--mono');x.fillText(e.env,cx,h-18);
+    x.fillStyle='#7d786d';x.font='9px '+cssv('--mono');x.fillText(ENVLAB[e.env]||'',cx,h-6);
+  });
+  x.textAlign='left';x.font='10px '+cssv('--mono');let lx=P.l;
+  [['orientation',PHC.orient],['implementation',PHC.impl],['verification',PHC.verif]].forEach(([t,c])=>{
+    x.fillStyle=c;x.fillRect(lx,7,9,9);x.fillStyle='#b3ada0';x.fillText(t,lx+13,15);lx+=13+x.measureText(t).width+16;});
+}
+
+function buildMatrix(j){
+  const wrap=el('div','matrix');
+  const reps=[...new Set(j.runs.map(r=>r.rep))].sort((a,b)=>a-b);
+  const tasks=[...new Set(j.runs.map(r=>r.task))];
+  j.envs.forEach(env=>{
+    const row=el('div','mrow');
+    row.appendChild(el('div','mlab',`${env}<small>${ENVLAB[env]||''}</small>`));
+    const cells=el('div','cells');
+    j.runs.filter(r=>r.env===env).sort((a,b)=>(a.task+a.rep).localeCompare(b.task+b.rep)).forEach(r=>{
+      const c=el('div','cell');c.style.borderLeftColor=VHEX[r.verdict]||'#6a7078';
+      const label=(tasks.length>1?r.task+' ':'')+(reps.length>1?'r'+r.rep:'');
+      c.innerHTML=`<div class="cw">
+          <span class="vd" style="color:${VCOL[r.verdict]||'var(--gray)'}">${r.verdict}</span>
+          <span class="sc">${r.score==null?'—':f2(r.score)}</span>
+        </div>
+        <div class="tk">${label?label+' · ':''}${fmt(r.input)} in · ${fmt(r.effective)} eff</div>`;
+      const sc=el('canvas');c.appendChild(sc);
+      requestAnimationFrame(()=>sparkCurve(sc,r.curve,VHEX[r.verdict],r.available.curve));
+      c.onclick=()=>openRun(r,c);
+      cells.appendChild(c);
+    });
+    row.appendChild(cells);wrap.appendChild(row);
+  });
+  return wrap;
+}
+function sparkCurve(canvas,curve,col,ok){
+  const w=canvas.clientWidth||150,h=26;const d=Math.min(2,devicePixelRatio||1);
+  canvas.width=w*d;canvas.height=h*d;const x=canvas.getContext('2d');x.scale(d,d);
+  if(ok===false||!curve||curve.length<2){ // degenerate / unavailable: dim baseline, no fake spike
+    x.strokeStyle='#2a313d';x.setLineDash([3,3]);x.beginPath();x.moveTo(2,h-3);x.lineTo(w-2,h-3);x.stroke();x.setLineDash([]);
+    x.fillStyle='#5a5850';x.font='8px ui-monospace,monospace';x.textAlign='left';x.fillText('curve n/a',3,10);return;}
+  const ys=curve.map(p=>p[1]),ymax=Math.max(...ys)||1;
+  const X=i=>2+(w-4)*i/(curve.length-1),Y=v=>h-2-(h-4)*v/ymax;
+  x.strokeStyle=col||'#a8d94f';x.lineWidth=1.4;x.beginPath();
+  curve.forEach((p,i)=>i?x.lineTo(X(i),Y(p[1])):x.moveTo(X(i),Y(p[1])));x.stroke();
+  x.lineTo(X(curve.length-1),h);x.lineTo(X(0),h);x.closePath();
+  x.fillStyle=(col||'#a8d94f')+'22';x.fill();
+}
+
+function envTable(by){
+  const p=el('div','panel');
+  let h='<h3>Cost &amp; efficiency by environment</h3><table><tr><th>Env</th><th class="num">Runs</th><th class="num">Acc</th><th class="num">Mean in</th><th class="num">Norm</th><th class="num" title="score / log₂(1+input)">Effcy</th><th class="num" title="files edited / files read">Nav-eff</th></tr>';
+  by.forEach(e=>{h+=`<tr><td>${e.env} <span style="color:var(--ink3)">${ENVLAB[e.env]||''}</span></td>
+    <td class="num">${e.n}</td><td class="num">${e.accepted}/${e.n}</td>
+    <td class="num">${fmt(e.input_mean)}</td>
+    <td class="num" style="color:${e.env==='E6'?'var(--red)':'var(--ink)'}">${f2(e.norm_mean)}×</td>
+    <td class="num">${f3(e.eff_mean)}</td>
+    <td class="num">${f2(e.nav_eff_mean)}</td></tr>`;});
+  p.innerHTML=h+'</table>';return p;
+}
+function taskTable(by){
+  const p=el('div','panel');
+  let h='<h3>Acceptance by task</h3><table><tr><th>Task</th><th class="num">Accepted</th><th class="num">Mean score</th><th class="num">Mean in</th></tr>';
+  by.forEach(t=>{h+=`<tr><td>${t.task}</td><td class="num">${t.accepted}/${t.total}</td>
+    <td class="num">${f2(t.score_mean)}</td><td class="num">${fmt(t.input_mean)}</td></tr>`;});
+  p.innerHTML=h+'</table>';return p;
+}
+
+/* ---------- RUN DRAWER ---------- */
+let selCell=null;
+function openRun(r,cell){
+  if(selCell)selCell.classList.remove('sel');selCell=cell;cell.classList.add('sel');
+  $('#dtitle').innerHTML=`<div style="font-family:var(--mono);font-size:12px;color:var(--ink2)">${r.env} · ${ENVLAB[r.env]||''}</div>
+    <span class="badge" style="background:${VHEX[r.verdict]};color:#0b0c0f">${r.verdict}</span>
+    <span class="badge" style="background:var(--bg3);color:var(--ink2)">score ${r.score==null?'—':f2(r.score)}</span>`;
+  const b=$('#dbody');b.innerHTML='';
+  b.appendChild(el('div',null,`<div class="repo" style="font-family:var(--mono);font-size:11px;color:var(--ink3);word-break:break-all">${r.run_id}</div>`));
+
+  // vitals
+  const vg=el('div','vgrid');
+  const V=[['input',fmt(r.input)],['output',fmt(r.output)],['effective',fmt(r.effective)],
+    ['cache read',fmt(r.cache_read)],['wall',secs(r.wall_s)],['to first edit',secs(r.ttfe_s)],
+    ['tool calls',r.ops.tool_calls],['files read',r.nav.reads_total],['nav entropy',f2(r.nav.entropy)]];
+  V.forEach(([k,v])=>{const c=el('div','c');c.innerHTML=`<div class="k">${k}</div><div class="v">${v}</div>`;vg.appendChild(c);});
+  b.appendChild(vg);
+
+  // Phase — primary: tool-call activity share (l2 fig05; works for every backend)
+  const pa=r.phase_activity,ph=r.phase;
+  const ps=el('div','sec');ps.innerHTML='<div class="st">phase activity · tool calls</div>';
+  if(pa&&pa.ok){
+    const bar=el('div','phasebar');
+    [['orient',pa.orient,'#4c72b0'],['impl',pa.impl,'#a8d94f'],['verify',pa.verif,'#e0a54f']].forEach(([n,v,c])=>{
+      const w=v*100;const sp=el('span');sp.style.width=w+'%';sp.style.background=c;sp.textContent=w>12?n:'';bar.appendChild(sp);});
+    ps.appendChild(bar);
+    ps.appendChild(el('div','legend',
+      `<span><i style="background:#4c72b0"></i>orient ${pctf(pa.orient)} · ${pa.o_n}</span>
+       <span><i style="background:#a8d94f"></i>impl ${pctf(pa.impl)} · ${pa.i_n}</span>
+       <span><i style="background:#e0a54f"></i>verify ${pctf(pa.verif)} · ${pa.v_n}</span>`));
+    if(!r.available.phase)
+      ps.appendChild(el('div','na',`Token-weighted split isn't available for <b>${r.backend}</b> — this shows tool-call share instead (the method the experiments use for single-turn agents).`));
+  }else{
+    ps.appendChild(el('div','na',pa&&pa.reason==='no edits'
+      ? 'Phase boundaries are undefined — the agent made no edits in this run.'
+      : 'Phase boundaries are undefined — no tool activity was recorded.'));
+  }
+  b.appendChild(ps);
+
+  // Phase — secondary: token-weighted split (only real for per-message backends)
+  if(r.available.phase){
+    const tot=(ph.orient_in+ph.impl_in+ph.verif_in)||1,tm=r.available.timing;
+    const s=el('div','sec');s.innerHTML='<div class="st">phase split · input tokens</div>';
+    const bar=el('div','phasebar');
+    [['orient',ph.orient_in,'#4c72b0'],['impl',ph.impl_in,'#a8d94f'],['verify',ph.verif_in,'#e0a54f']].forEach(([n,v,c])=>{
+      const w=v/tot*100;const sp=el('span');sp.style.width=w+'%';sp.style.background=c;sp.textContent=w>12?n:'';bar.appendChild(sp);});
+    s.appendChild(bar);
+    s.appendChild(el('div','legend',
+      `<span><i style="background:#4c72b0"></i>orient ${fmt(ph.orient_in)}${tm?' · '+secs(ph.orient_s):''}</span>
+       <span><i style="background:#a8d94f"></i>impl ${fmt(ph.impl_in)}${tm?' · '+secs(ph.impl_s):''}</span>
+       <span><i style="background:#e0a54f"></i>verify ${fmt(ph.verif_in)}${tm?' · '+secs(ph.verif_s):''}</span>`));
+    b.appendChild(s);
+  }
+
+  // derived metrics (experiments compute_metrics.py)
+  const dv=r.derived,dsec=el('div','sec');dsec.innerHTML='<div class="st">derived metrics</div>';
+  const dkv=el('div','kv');
+  [['efficiency ratio',f3(dv.efficiency_ratio),'score / log₂(1+input)'],
+   ['nav efficiency',f2(dv.nav_efficiency),'files edited / files read'],
+   ['memory util',f2(dv.memory_utilization_rate),'memory tools / all tools'],
+   ['total token cost',fmt(dv.total_token_cost),'input + output'],
+   ['orientation share',dv.opts==null?'—':pctf(dv.opts),'orient tokens / total (token backends only)'],
+   ['CAC ratio',dv.cac_ratio==null?'—':f2(dv.cac_ratio),'context-acquisition / total (token backends only)'],
+   ['replanning /h',dv.replanning_rate==null?'—':f2(dv.replanning_rate),'replans per wall-clock hour (needs timing)']]
+   .forEach(([k,v,t])=>dkv.appendChild(el('div','r',`<span title="${t}">${k}</span><span>${v}</span>`)));
+  dsec.appendChild(dkv);b.appendChild(dsec);
+
+  // token curve (only real when cumulative tokens actually grow over the session)
+  const tc=el('div','sec');tc.innerHTML='<div class="st">token curve · cumulative input</div>';
+  if(r.available.curve){const cc=el('canvas');cc.style.width='100%';tc.appendChild(cc);requestAnimationFrame(()=>bigCurve(cc,r.curve));}
+  else tc.appendChild(el('div','na',`Not available for <b>${r.backend}</b> — tokens arrive as one total at the end of the session, not per message, so there is no trajectory to plot.`));
+  b.appendChild(tc);
+
+  // criteria
+  const cr=el('div','sec');cr.innerHTML=`<div class="st">criteria · battery ${r.battery.passed??'?'}/${r.battery.total??'?'}</div>`;
+  (r.criteria||[]).forEach(c=>{
+    const row=el('div','crit');
+    row.innerHTML=`<span class="mk" style="color:${c.met?'var(--green)':'var(--red)'}">${c.met?'✓':'✗'}</span>
+      <div><div class="txt">${c.criterion}</div>
+      <div class="src">${c.source}${c.evidence?' · <span class="ev">'+esc(c.evidence)+'</span>':''}</div></div>`;
+    cr.appendChild(row);
+  });
+  if(!(r.criteria||[]).length)cr.appendChild(el('div',null,'<span style="color:var(--ink3);font-size:12px">no criteria graded</span>'));
+  b.appendChild(cr);
+
+  // files edited
+  if(r.files_edited.length){
+    const fe=el('div','sec');fe.innerHTML='<div class="st">files edited</div>';
+    const ch=el('div','chips');r.files_edited.forEach(f=>ch.appendChild(el('span','fchip',esc(f))));
+    fe.appendChild(ch);b.appendChild(fe);
+  }
+
+  // ops
+  const op=el('div','sec');op.innerHTML='<div class="st">operations</div>';
+  const kv=el('div','kv');
+  [['bash',r.ops.bash],['search',r.ops.search],['git',r.ops.git],['web',r.ops.web],
+   ['agent spawns',r.ops.agent_spawns],['replanning',r.ops.replanning],['messages',r.ops.messages],
+   ['reads unique',r.nav.reads_unique]].forEach(([k,v])=>{
+    kv.appendChild(el('div','r',`<span>${k}</span><span>${v}</span>`));});
+  op.appendChild(kv);
+  const flags=el('div','nav-flags');
+  [['AGENTS.md read',r.nav.agents_md_read],['PROJECT.md read',r.nav.project_md_read],
+   ['memory '+r.nav.memory_reads+'r/'+r.nav.memory_writes+'w',r.nav.memory_reads||r.nav.memory_writes],
+   ['.xo reads '+r.nav.xo_reads,r.nav.xo_reads]].forEach(([t,on])=>
+    flags.appendChild(el('span','flag '+(on?'on':'off'),t)));
+  op.appendChild(flags);
+  b.appendChild(op);
+
+  $('#drawer').classList.add('open');$('#scrim').classList.add('on');
+}
+function bigCurve(canvas,curve){
+  const w=canvas.clientWidth||400,h=140;const[x]=mkcvInto(canvas,w,h);
+  if(!curve||curve.length<2){x.fillStyle='#7d786d';x.font='11px monospace';x.fillText('single-turn run (no curve)',10,h/2);return;}
+  const P={l:40,r:10,t:10,b:20},ys=curve.map(p=>p[1]),ymax=Math.max(...ys)||1;
+  const X=i=>P.l+(w-P.l-P.r)*i/(curve.length-1),Y=v=>P.t+(h-P.t-P.b)*(1-v/ymax);
+  x.font='9px '+cssv('--mono');x.fillStyle='#5a5850';x.textAlign='right';
+  for(let g=0;g<=2;g++){const gy=P.t+(h-P.t-P.b)*g/2;x.strokeStyle='#1b1f27';x.beginPath();x.moveTo(P.l,gy);x.lineTo(w-P.r,gy);x.stroke();
+    x.fillText(fmt(ymax*(1-g/2)),P.l-5,gy+3);}
+  x.strokeStyle='#a8d94f';x.lineWidth=1.8;x.beginPath();
+  curve.forEach((p,i)=>i?x.lineTo(X(i),Y(p[1])):x.moveTo(X(i),Y(p[1])));x.stroke();
+  x.lineTo(X(curve.length-1),h-P.b);x.lineTo(X(0),h-P.b);x.closePath();x.fillStyle='rgba(168,217,79,.12)';x.fill();
+}
+
+function closeDrawer(){$('#drawer').classList.remove('open');$('#scrim').classList.remove('on');
+  if(selCell)selCell.classList.remove('sel');selCell=null;}
+$('#dclose').onclick=closeDrawer;$('#scrim').onclick=closeDrawer;
+addEventListener('keydown',e=>{if(e.key==='Escape')closeDrawer();});
+
+/* ---------- utils + router ---------- */
+function mkcvInto(canvas,w,h){const d=Math.min(2,devicePixelRatio||1);canvas.width=w*d;canvas.height=h*d;
+  canvas.style.width=w+'px';canvas.style.height=h+'px';const x=canvas.getContext('2d');x.scale(d,d);return[x,w,h];}
+function cssv(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim()||'monospace';}
+function esc(s){return String(s??'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+
+function route(){
+  closeDrawer();
+  const m=location.hash.match(/^#\/job\/(.+)$/);
+  if(m)jobView(decodeURIComponent(m[1]));else atlas();
+}
+$('#back').onclick=()=>{location.hash='';};
+addEventListener('hashchange',route);
+route();
+</script>
+</body>
+</html>

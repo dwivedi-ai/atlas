@@ -117,6 +117,35 @@ jobs/<job_id>/
                                  run_record.json, report.md
 ```
 
+## Visualize the results
+
+Once you have one or more jobs under `jobs/`, launch the built-in dashboard:
+
+```bash
+./visualize.sh                # serves http://127.0.0.1:8000
+./visualize.sh --port 8080    # custom port
+```
+
+It's a **zero-dependency, read-only** web app (`viz/server.py`, Python's stdlib
+`http.server`) that reflects the telemetry each run already wrote — nothing is
+generated or mutated. (`numpy`, if installed, adds bootstrap confidence intervals;
+without it the bars just show point estimates.) Two levels:
+
+- **Atlas** — every job as a card: accept-rate, token cost, and a mini
+  cost-by-environment sparkline.
+- **Job view** — the `task × env × rep` **matrix** (click a run for its detail
+  drawer), the interactive **cost-by-environment** ladder, a **cost-vs-quality**
+  scatter, **phase-activity-by-environment**, and cost/efficiency tables. The run
+  drawer shows vitals, **phase activity** (tool-call share) and the token split,
+  the token curve, graded criteria, files changed, operations, and the derived
+  metrics (`efficiency_ratio`, `nav_efficiency`, …).
+
+**Backend fidelity.** Some signals are only real for backends that report
+per-message tokens/timestamps. The dashboard is honest about this: the
+token-level phase split, cumulative token curve, and timing render **only** for
+backends that produce them (Claude; partially Gemini), while the **phase-activity**
+view (tool-call share) and the cost/efficiency metrics work for **every** backend.
+
 ## Notes for researchers
 
 - **The grader is model-authored.** Synthesis is an LLM step; the floor-check catches the common failure

@@ -11,3 +11,7 @@ HANDOFF.md
 PLAN.md
 GEMINI_INTEGRATION.md
 AGY_DOCS.md
+/docs/
+
+# Vendored upstream (has its own git repo) — never part of this repo.
+/resources/*
