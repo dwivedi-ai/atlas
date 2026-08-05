@@ -30,10 +30,11 @@ PLAN.md
 GEMINI_INTEGRATION.md
 AGY_DOCS.md
 
-# NOTE: /docs/ was ignored here. It is now TRACKED — docs/IMPLEMENTATION.md,
-# docs/STATUS.md and docs/SPIKES.md are the WUR spec, its data contract, and the
-# measured evidence behind both. They are the reason the design is auditable, so
-# they belong in history, not on one machine.
+# Working docs stay LOCAL and are never published: docs/IMPLEMENTATION.md (the WUR
+# spec), docs/STATUS.md (the data contract) and docs/SPIKES.md (the measured CLI
+# evidence). They exist on disk for whoever is working the experiment; README.md
+# remains the only public doc.
+/docs/
 
 # Vendored upstream (has its own git repo) — never part of this repo.
 /resources/*

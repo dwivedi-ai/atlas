@@ -159,14 +159,13 @@ fact crosses four boundaries: **available → read → used → retained**. Arms
 sits and *in what format*, and a probe interrupts every 1–3 tool calls to ask the agent which facts
 are currently active.
 
-| doc | what it is |
-|-----|------------|
-| [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md) | the buildable spec — architecture, components, schemas, migration map, build phases |
-| [docs/STATUS.md](docs/STATUS.md) | the data contract — what is captured, what is derived, what each metric is for, and what it cannot tell you |
-| [docs/SPIKES.md](docs/SPIKES.md) | the measured evidence the design rests on (Phase 0 kill-shots + CLI findings) |
-
 Start from `templates/job.wur.example.yaml`. **Ladder mode is unchanged** — everything above this
 section works exactly as before.
+
+The design notes, data contract and measured CLI evidence live in `docs/` and are deliberately
+**not published** (see `.gitignore`); the code, schemas, fixture and task packs here are
+self-describing. `schemas/*.schema.json` is the authoritative field-level documentation for every
+artifact a run writes.
 
 ## Visualize the results
 
@@ -195,7 +194,7 @@ without it the bars just show point estimates.) Two levels:
 > `run_record` shape and labels environments `E0..E6`. A WUR job's arms will render
 > alphabetically with the wrong baseline and no uptake funnel. `viz/server.py` and
 > `viz/static/index.html` are listed as MODIFY in the migration map and that work is
-> not done — use `docs/STATUS.md` and the analysis notebook for WUR results until it is.
+> not done — use `analysis/uptake.ipynb` for WUR results until it is.
 
 **Backend fidelity.** Some signals are only real for backends that report
 per-message tokens/timestamps. The dashboard is honest about this: the
