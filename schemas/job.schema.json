@@ -2,64 +2,408 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "job.schema.json",
   "title": "JobSpec",
-  "description": "One exp-runner job: a repo + a task + a natural-language acceptance description + a model.",
+  "description": "One exp-runner job: a repo + a task + a natural-language acceptance description + an agent. VERSION 2 adds the second experiment mode, `experiment: wur` (Workspace Uptake & Retention), alongside the 7-rung context ladder. Every v2 key is optional and `model` is no longer required, so a v1 ladder job.yaml \u2014 including templates/job.example.yaml \u2014 validates unchanged. Cross-key semantics (a wur job needs conditions[] and facts_file; a ladder job needs environments[]) are NOT enforced here on purpose: jobspec.py mutates a spec key by key via `set`, re-validating after each write, so a schema that demanded a complete wur spec would reject every intermediate state. Those checks belong in jobspec._semantic_checks().",
   "type": "object",
-  "required": ["schema_version", "job_id", "repo", "task", "accept", "model"],
+  "required": [
+    "schema_version",
+    "job_id",
+    "repo"
+  ],
+  "allOf": [
+    {
+      "description": "A job needs work to do: either a `tasks` list, or the single-task shorthand `task` + `accept`. IMPLEMENTATION.md \u00a78.1 specified this as an if/then; it was left as an unconditional `required: [task, accept]`, so multi-task specs only validated because jobspec._normalize_tasks mirrored task 1 back to the top level. With that mirror correctly removed for multi-task jobs, this clause is what keeps them valid.",
+      "if": {
+        "not": {
+          "required": [
+            "tasks"
+          ]
+        }
+      },
+      "then": {
+        "required": [
+          "task",
+          "accept"
+        ]
+      }
+    }
+  ],
   "additionalProperties": false,
+  "$defs": {
+    "condition_id": {
+      "description": "A WUR arm id. Free-form by design, not an enum: \u00a77.1 names 12 arms (d0-push, d1-ptr, d1, d2, d3, d2-check, d2-table, d2-dist, ctrl, ctrl-nofile, d1-np, d3-np) and the \u00a77.2 pilot already adds a 13th (ctrl-np), so a closed list here would have to be edited before the pilot could run.",
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,31}$"
+    }
+  },
   "properties": {
-    "schema_version": { "type": "string", "const": "1" },
-    "job_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,63}$" },
-
+    "schema_version": {
+      "description": "\"1\" = ladder-only spec. \"2\" = may carry the wur keys below.",
+      "type": "string",
+      "enum": [
+        "1",
+        "2"
+      ]
+    },
+    "job_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+    },
     "repo": {
       "type": "object",
       "additionalProperties": false,
-      "anyOf": [{ "required": ["url"] }, { "required": ["path"] }],
+      "anyOf": [
+        {
+          "required": [
+            "url"
+          ]
+        },
+        {
+          "required": [
+            "path"
+          ]
+        }
+      ],
       "properties": {
-        "url":        { "type": "string" },
-        "path":       { "type": "string" },
-        "ref":        { "type": "string", "default": "HEAD" },
-        "pinned_sha": { "type": ["string", "null"] }
+        "url": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "ref": {
+          "type": "string",
+          "default": "HEAD"
+        },
+        "pinned_sha": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
       }
     },
-
     "build": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "stack":    { "type": "string", "enum": ["auto", "python", "node", "none"], "default": "auto" },
-        "command":  { "type": ["string", "null"] },
-        "detected": { "type": ["string", "null"] }
+        "stack": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "python",
+            "node",
+            "none"
+          ],
+          "default": "auto"
+        },
+        "command": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "detected": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
       }
     },
-
-    "task":   { "type": "string", "minLength": 1 },
-    "accept": { "type": "string", "minLength": 1 },
-
+    "task": {
+      "type": "string",
+      "minLength": 1
+    },
+    "accept": {
+      "type": "string",
+      "minLength": 1
+    },
     "tasks": {
       "type": "array",
       "minItems": 1,
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "task", "accept"],
+        "required": [
+          "id",
+          "task",
+          "accept"
+        ],
         "properties": {
-          "id":     { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,63}$" },
-          "task":   { "type": "string", "minLength": 1 },
-          "accept": { "type": "string", "minLength": 1 }
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+          },
+          "task": {
+            "type": "string",
+            "minLength": 1
+          },
+          "accept": {
+            "type": "string",
+            "minLength": 1
+          }
         }
       }
     },
-
-    "model":  { "type": "string", "enum": ["codex", "claude", "claude-sonnet-4-6", "gemini", "gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite", "agy", "agy-flash-low", "agy-flash-med", "agy-flash-high", "agy-pro-low", "agy-pro-high", "agy-sonnet", "agy-opus", "agy-gpt-oss"] },
-    "reps":   { "type": "integer", "minimum": 1, "default": 1 },
-    "max_seconds": { "type": "integer", "minimum": 0, "default": 0 },
-    "judge_votes": { "type": "integer", "minimum": 1, "default": 1 },
-    "analyze": { "type": "boolean", "default": true },
+    "model": {
+      "description": "DEPRECATED in v2 \u2014 superseded by agent{backend, model, effort}, which separates the resolver key from the concrete model id. Kept as a free string (the v1 enum is gone) so existing job.yaml files keep working and so a new model id does not require a schema edit. jobspec._model_of(spec) is the one reader: it prefers agent.model, then agent.backend, then this.",
+      "type": [
+        "string",
+        "null"
+      ],
+      "deprecated": true
+    },
+    "agent": {
+      "description": "v2. Two-level model selection: `backend` picks the CLI adapter, `model` the concrete id it is invoked with, `effort` the backend-specific reasoning knob (null where the backend has none).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "backend"
+      ],
+      "properties": {
+        "backend": {
+          "type": "string",
+          "enum": [
+            "claude",
+            "codex",
+            "gemini",
+            "agy"
+          ]
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "e.g. claude-sonnet-5. Null = the backend's own default."
+        },
+        "effort": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "reps": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 1,
+      "description": "Runs per (task, condition) cell. Reps sample decoding noise, not population \u2014 task is the unit of generalization."
+    },
+    "max_seconds": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 0
+    },
+    "judge_votes": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 1
+    },
+    "analyze": {
+      "type": "boolean",
+      "default": true
+    },
     "environments": {
+      "description": "Ladder mode only: the 7-rung context ladder.",
       "type": "array",
       "minItems": 1,
-      "items": { "type": "string", "enum": ["E0", "E1", "E2", "E3", "E4", "E5", "E6"] },
-      "default": ["E0", "E1", "E2", "E3", "E4", "E5", "E6"]
+      "items": {
+        "type": "string",
+        "enum": [
+          "E0",
+          "E1",
+          "E2",
+          "E3",
+          "E4",
+          "E5",
+          "E6"
+        ]
+      },
+      "default": [
+        "E0",
+        "E1",
+        "E2",
+        "E3",
+        "E4",
+        "E5",
+        "E6"
+      ]
+    },
+    "experiment": {
+      "description": "v2. Which instrument to run. `ladder` is the existing context-ladder job and is the default when absent, so nothing that works today changes. `wur` skips context_gen.py entirely and runs the fact / plant / leak-check / canary / gate / schedule chain instead.",
+      "type": "string",
+      "enum": [
+        "ladder",
+        "wur"
+      ],
+      "default": "ladder"
+    },
+    "conditions": {
+      "description": "v2, wur mode: the arms to run, replacing `environments`. \u00a77.1's 12 arms hold filename constant (NOTES.md at every depth) so filename salience is never confounded with depth.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/condition_id"
+      }
+    },
+    "baseline_condition": {
+      "description": "v2. The arm every other arm is differenced against: \"E0\" in ladder mode, \"ctrl\" in wur mode (use is ALWAYS reported as lift over the paired control; raw rates appear only in the appendix). figures.py must thread this instead of hard-coding env == \"E0\", which yields 0.00x for every arm but one under a label reading \"normalized to E0 = 1.00\".",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "facts_file": {
+      "description": "v2, wur mode: path to the fact registry (facts.yaml). Minted nonces, detector bindings, and the tier-(b) paraphrase regexes that must be FROZEN BEFORE ANY DATA. The live copy lives at $JOB_DIR/.registry/facts.yaml, mode 700, and must never be reachable from a workspace (V9).",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "tier": {
+      "description": "v2. D6: v1 runs Tier A (the synthetic fixture) only; Tier B (generated facts on arbitrary repos) is a follow-on job. Recorded on every row so the two pool later.",
+      "type": "string",
+      "enum": [
+        "A",
+        "B"
+      ],
+      "default": "A"
+    },
+    "pointer_regime": {
+      "description": "v2. Job-level default for how an arm that carries a pointer renders it: none | prose (a prose pointer in CLAUDE.md) | import (an @NOTES.md import stub, which is simultaneously a push mechanism AND the strongest possible pointer \u2014 the confound d1-ptr exists to split).",
+      "type": "string",
+      "enum": [
+        "none",
+        "prose",
+        "import"
+      ],
+      "default": "none"
+    },
+    "matrix_seed": {
+      "description": "v2. Seed for the blocked randomisation frozen into schedule.json. NOT the probe cadence seed: cadence.schedule() is seeded by (salt, task_id, rep) only, deliberately not by arm, so every arm of a (task, rep) fires its k-th probe at the same barrier index and probe timing becomes a matched covariate.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "probe": {
+      "description": "v2, wur mode: the probe subsystem's knobs. Defaults are the \u00a76.2 values. The frozen TEXT is not configurable \u2014 it lives in lib/wur/protocol.py and is sha256-stamped into run_meta.json.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "False for the no-probe arms (d1-np, d3-np), which bound probe reactivity. Per-arm override; this is the job-level default."
+        },
+        "lo": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1,
+          "description": "Cadence interval lower bound, in tool calls."
+        },
+        "hi": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 3
+        },
+        "max_probes": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 24,
+          "description": "Cost bound: unbounded ~U{1,2,3} intervals over the step budget imply ~60 probes/run at ~350 output tokens each, ~20k tokens of pure instrument."
+        },
+        "salt": {
+          "type": "string",
+          "default": "wur-v1",
+          "description": "Cadence seed salt. Changing it re-randomizes every future run relative to every past one."
+        },
+        "max_retries": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 1,
+          "description": "RETRY_TEXT re-asks per probe when the answer does not parse."
+        },
+        "max_resumes": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 3,
+          "description": "Consecutive RESUME_TEXT injections on a zero-tool-call result. Sent IDENTICALLY in the no-probe arms, so it is not a probed-arm-only intervention."
+        },
+        "gate_timeout_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 300000,
+          "description": "Barrier poll timeout. On expiry the hook prints {} and FAILS OPEN \u2014 a harness failure must never wedge a run."
+        }
+      }
+    },
+    "budget": {
+      "description": "v2. Per-run stop conditions. There is no --max-turns in Claude Code 2.1.222, and deny-with-reason does not stop a run (the model treats the deny reason as injection and re-issues the same call, which then succeeds, V14) \u2014 so `steps` is enforced as deny-every-subsequent-call PLUS closing stdin.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "steps": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 30,
+          "description": "Step budget in tool calls; also the `budget` argument to cadence.schedule(). MEASURED FLOOR: at steps=8 every agent in the smoke matrix spent the entire budget orienting and never opened the planted file, so read/used/retained were structurally zero and the instrument measured nothing. Do not go below ~30 without re-checking read_rate(d1) against pilot gate G2."
+        },
+        "max_usd": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Passed as --max-budget-usd. Under a Max subscription there is no per-token bill, so this is an API-equivalent opportunity cost."
+        },
+        "max_seconds": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "parallelism": {
+      "description": "v2. Sliding-window concurrency. JOBS <= 4 is verified against a real repo (S3: four worktrees, four isolated CLAUDE_CONFIG_DIRs, all clean); 6 is the untested ceiling. Parallelism is only safe because per-run CLAUDE_CONFIG_DIR + --settings replaced the global ~/.claude/settings.json mutation.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "jobs": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8,
+          "default": 4
+        },
+        "per_backend": {
+          "description": "Backend policy table replacing the hard JOBS=1 clamp. A backend absent here inherits `jobs`.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "claude": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "codex": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "gemini": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "agy": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        }
+      }
+    },
+    "discovery_regime": {
+      "description": "v2, wur mode. IMPLEMENTATION.md \u00a77.1: whether ANY file in the workspace names the planted file. 'discovery' = nothing points at NOTES.md, so read-rate measures SEARCH. 'routing' = a byte-identical README.md in every arm carries one path line that varies, so read-rate measures whether the agent FOLLOWS a pointer. These are different experiments and are not comparable within one model, so this is a BETWEEN-job factor. Distinct from `pointer_regime`, which is the per-arm CLAUDE.md render mechanism (none|prose|import); the two were conflated under one name in the first cut, which left the \u00a77.1 requirement that this be 'a declared knob, not an accident' unmet.",
+      "type": "string",
+      "enum": [
+        "discovery",
+        "routing"
+      ],
+      "default": "discovery"
     }
   }
 }

@@ -94,7 +94,10 @@ def _generate_artifacts(job_dir: Path, spec: dict, needed: list[str]) -> Path:
     art_dir = job_dir / "environments" / "_artifacts"
     art_dir.mkdir(parents=True, exist_ok=True)
     sha = spec["repo"]["pinned_sha"]
-    model = spec["model"]
+    # jobspec._model_of, not spec["model"]: v2 moved model selection into
+    # agent{backend, model, effort} and dropped `model` from the schema's required list,
+    # so a v2 spec without a top-level `model:` would KeyError here.
+    model = jobspec._model_of(spec)
     max_seconds = int(spec.get("max_seconds") or 0)
     venv = job_dir / ".venv"
     for art in needed:

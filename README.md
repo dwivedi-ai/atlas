@@ -11,6 +11,9 @@ model, and it produces a reproducible answer to *how much context is worth it he
 Works headless with **four agent backends** — OpenAI **Codex**, Anthropic **Claude**, Google **Gemini**, and
 Google **Antigravity (`agy`)** — behind one interface.
 
+> The code, the CLI banner and the installed command all call this `exp-runner`; the dashboard's
+> top-level view is called the **Atlas**. Same tool, three names.
+
 ---
 
 ## The idea: a context ladder
@@ -23,14 +26,19 @@ writes the docs once per job), so you can measure how cost and success change as
 | **E0** | bare repo (orienting docs stripped) |
 | **E1** | `+README` |
 | **E2** | `+AGENTS` |
-| **E3** | `+PROJECT` |
+| **E3** | `+AGENTS+PROJECT` |
 | **E4** | full scaffold (AGENTS/PROJECT/OBJECTIVES/PLAN/PROGRESS + agent-native context file + memory skeleton) |
 | **E5** | `+` seeded memory (facts, constraints, preferences) |
-| **E6** | DOX (per-directory context rails + `.xo/` + episodic memory) |
+| **E6** | DOX (root AGENTS rail + per-directory child AGENTS + `.xo/` + episodic memory) |
 
 The runner strips the repo's own orienting docs so **E0 is genuinely bare**, then commits each environment's
 context as a baseline — so the agent's solution diff never mixes in the injected docs. `--envs` selects any
 subset (default: all seven).
+
+> **The ladder only engages when a job has 2+ environments.** With a single environment the run is
+> deliberately a plain "repo as-is" run: nothing is stripped and no overlay is applied — which means
+> `--envs E4` on its own runs the *bare* repo, not the E4 scaffold. Use at least two rungs
+> (`--envs E0,E4`) whenever you want context injected.
 
 ---
 
@@ -44,7 +52,8 @@ subset (default: all seven).
 | `agy` | Google Antigravity | serial + per-run state isolation; one login covers Gemini + Claude + GPT-OSS models |
 
 The agent's native context file is chosen per model (`AGENTS.md` for codex, `CLAUDE.md` for claude,
-`GEMINI.md` for gemini, `.agents/AGENTS.md` for agy).
+`GEMINI.md` for gemini, `.agents/AGENTS.md` for agy). Model variants are selectable directly:
+`gemini-2.5-flash`, `agy-pro-high`, `agy-sonnet`, `agy-opus`, … (see `schemas/job.schema.json` for the full list).
 
 ## Prerequisites
 
@@ -55,8 +64,9 @@ The agent's native context file is chosen per model (`AGENTS.md` for codex, `CLA
   - Gemini: authenticate the Gemini CLI; runs off your `~/.gemini` credentials
   - Antigravity: sign in once (`agy`, then complete the browser OAuth on the individual tier)
 
-`./install.sh` checks prerequisites, installs the deps, and puts an `environment-runner` command on your PATH.
-Or `pip install -r requirements.txt` and use `./run.sh` directly.
+`./install.sh` checks prerequisites, installs the deps, and puts an `exp-runner` command on your PATH
+(a thin wrapper around `run.sh`; override the location with `BINDIR=…`). Or `pip install -r requirements.txt`
+and use `./run.sh` directly.
 
 ## Quickstart
 
@@ -67,16 +77,33 @@ Or `pip install -r requirements.txt` and use `./run.sh` directly.
 # Non-interactive: run a task across all 7 environments (7 codex cells at once):
 ./run.sh --repo https://github.com/acme/widgets.git \
          --task-file task.txt --accept-file accept.txt --model codex --jobs 7
+```
 
-# Knobs:
-#   --model <codex|claude|gemini|agy>   agent backend (default: codex)
-#   --envs E0,E4,E6                     subset of environments (default: all 7)
-#   --jobs N                            concurrent cells (codex only; others forced serial)
-#   --reps N                            runs per (task × environment)
-#   --tasks-file f.yaml                 multiple tasks in one job
-#   --no-analyze                        skip the per-run self-analysis text
-#   --brew-only                         stop after cloning + building the env
-#   --job <id>                          re-run an already-authored job (resume-safe)
+**Knobs**
+
+| flag | meaning |
+|------|---------|
+| `--repo <url>` / `--path <dir>` | repository source (one required, unless `--job`) |
+| `--ref <ref>` | branch / tag / SHA; resolved to a SHA and pinned into `job.yaml` (default `HEAD`) |
+| `--task <text>` / `--task-file <f>` | the task handed verbatim to the agent |
+| `--accept <text>` / `--accept-file <f>` | the acceptance handed only to the grader |
+| `--tasks-file <f.yaml>` | YAML list of `{id?, task, accept}` for a multi-task job |
+| `--model <codex\|claude\|gemini\|agy>` | agent backend (default: `codex`) |
+| `--envs E0,E4,E6` | subset of environments (default: all 7) |
+| `--jobs N` | concurrent cells (codex only; the others are forced serial) |
+| `--reps N` | runs per (task × environment) |
+| `--max-seconds N` | per-run timeout; `0` = none (default). A timed-out run is graded `timeout` |
+| `--no-analyze` | skip the per-run self-analysis pass (one extra agent call per cell) |
+| `--build-stack <auto\|python\|node\|none>` / `--build-cmd <cmd>` | override stack detection / add a build step |
+| `--brew-only` | stop after cloning + building the env |
+| `--rebuild-venv` | force-rebuild the job's `.venv` during brew |
+| `--job-id <id>` / `--job <id>` | name a new job folder / re-run an existing one |
+
+Everything else lives in `job.yaml` — notably `judge_votes` (majority-vote the subjective criteria),
+which has no CLI flag. Edit the file, or:
+
+```bash
+python3 lib/jobspec.py set jobs/<id> judge_votes 3
 ```
 
 ## How a run works
@@ -92,13 +119,16 @@ Or `pip install -r requirements.txt` and use `./run.sh` directly.
    sees only the task plus that environment's context. Live per-cell status.
 6. **Grade** — run the battery against the solution and LLM-adjudicate the subjective criteria → a verdict
    (`accepted` / `partial` / `rejected`) + score + per-criterion evidence.
-7. **Self-analysis** (optional) — the same agent writes an honest reflection on its own result.
+7. **Self-analysis** (on by default) — the same agent writes an honest reflection on its own result.
 8. **Report + figures** — a job scorecard plus two PNGs: **token cost by environment** and a
    **file-access heatmap**.
 
 The **task** is handed verbatim to the agent; the **acceptance** text goes only to the grader (never the
 agent), so the battery is unbiased and identical across reps. Agents run with approvals bypassed against an
 **isolated worktree + per-job venv — never your working copy**; the solution is saved as `git.patch`.
+
+The whole pipeline is **resume-safe**: brewing, context artifacts, grader synthesis and finished cells are
+all sentinel-guarded, so `./run.sh --job <id>` after an interruption continues instead of restarting.
 
 ## Output
 
@@ -107,15 +137,36 @@ jobs/<job_id>/
 ├── job.yaml                     frozen spec (repo, pinned SHA, tasks, model, environments, reps)
 ├── repo.git/  .venv/  brew.log  the brew
 ├── environments/E0..E6/         per-env context overlays (agent-written for your repo)
-├── grader/<task>/               synthesized test battery + floor-check
+├── grader/<task>/               synthesized test battery + floor-check log
 ├── agent-analysis/
 │   ├── fig_token_cost_by_env.png    token cost per environment
 │   ├── fig_file_access_by_env.png   file × environment access heatmap
 │   └── <run-id>.md                  per-run self-analysis (unless --no-analyze)
 ├── REPORT.md                    scorecard + cost-by-environment table
-└── runs/<run-id>/               one per (task, env, rep): git.patch, transcript, judge.json,
-                                 run_record.json, report.md
+└── runs/<run-id>/               one per (task, env, rep): git.patch, transcript.jsonl, judge.json,
+                                 run_record.json, event_log.jsonl, report.md
 ```
+
+Run workspaces are deleted after grading; `git.patch` is what survives (`git apply git.patch` to replay a
+solution). `run_record.json` is the canonical telemetry record, validated against
+`schemas/run_record.schema.json`.
+
+## The second experiment: Workspace Uptake & Retention
+
+`--experiment wur` runs a different instrument on the same machinery. Instead of asking *does richer
+context help*, it plants a single **counter-prior fact** in the workspace and measures whether that
+fact crosses four boundaries: **available → read → used → retained**. Arms vary only *where* the fact
+sits and *in what format*, and a probe interrupts every 1–3 tool calls to ask the agent which facts
+are currently active.
+
+| doc | what it is |
+|-----|------------|
+| [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md) | the buildable spec — architecture, components, schemas, migration map, build phases |
+| [docs/STATUS.md](docs/STATUS.md) | the data contract — what is captured, what is derived, what each metric is for, and what it cannot tell you |
+| [docs/SPIKES.md](docs/SPIKES.md) | the measured evidence the design rests on (Phase 0 kill-shots + CLI findings) |
+
+Start from `templates/job.wur.example.yaml`. **Ladder mode is unchanged** — everything above this
+section works exactly as before.
 
 ## Visualize the results
 
@@ -140,6 +191,12 @@ without it the bars just show point estimates.) Two levels:
   the token curve, graded criteria, files changed, operations, and the derived
   metrics (`efficiency_ratio`, `nav_efficiency`, …).
 
+> **The dashboard has NOT been updated for `wur` mode.** It still reads the ladder's
+> `run_record` shape and labels environments `E0..E6`. A WUR job's arms will render
+> alphabetically with the wrong baseline and no uptake funnel. `viz/server.py` and
+> `viz/static/index.html` are listed as MODIFY in the migration map and that work is
+> not done — use `docs/STATUS.md` and the analysis notebook for WUR results until it is.
+
 **Backend fidelity.** Some signals are only real for backends that report
 per-message tokens/timestamps. The dashboard is honest about this: the
 token-level phase split, cumulative token curve, and timing render **only** for
@@ -149,13 +206,20 @@ view (tool-call share) and the cost/efficiency metrics work for **every** backen
 ## Notes for researchers
 
 - **The grader is model-authored.** Synthesis is an LLM step; the floor-check catches the common failure
-  modes, but skim `grader/<task>/floor.log` and feel free to hand-edit `criteria.json` before trusting a
-  verdict. Bump `--judge-votes` for subjective criteria on high-stakes jobs.
+  modes but is **advisory only** — a `floor_ok: false` manifest does not stop the job. Skim
+  `grader/<task>/floor.log` and feel free to hand-edit `criteria.json` before trusting a verdict. Raise
+  `judge_votes` for subjective criteria on high-stakes jobs.
 - **Token counts vary by backend.** Codex/Claude/Gemini report the provider's billed usage (cache-aware);
   Antigravity reports client-side *estimates* with no cache metric — comparable within a backend, but read
   cross-backend token numbers with that caveat.
-- **Cost scales with the matrix.** A 7-environment × multi-rep job with context generation is a real token
-  spend — scale `--envs` / `--reps` deliberately.
+- **Cost scales with the matrix.** A 7-environment × multi-rep job also pays for context generation
+  (~7 agent calls), grader synthesis, and — unless `--no-analyze` — one reflection call per cell. Scale
+  `--envs` / `--reps` deliberately.
+- **E6 replaces the repo's `.gitignore`** with a one-line `.xo/` ignore, by construction of the DOX overlay.
+  If your repo relies on `.gitignore` to keep build output untracked, expect that noise in the E6 patch.
+- **Claude runs touch `~/.claude/settings.json`** to install logging hooks, backing it up per run and
+  restoring it in teardown. If you had no `settings.json` at all, there is nothing to restore and the hook
+  block stays behind — delete it manually if you don't want it.
 
 ## License
 

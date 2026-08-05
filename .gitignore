@@ -6,12 +6,34 @@
 __pycache__/
 *.pyc
 
+# A per-run CLAUDE_CONFIG_DIR holds a COPY OF ~/.claude/.credentials.json.
+# teardown deletes it and asserts it is gone, but a credential copy must never be
+# committable even for the seconds it exists, and never if a run dies mid-flight.
+**/claude_home/
+
+# The fact registry: minted nonces, detector bindings, prior-check gates, and the
+# rendered overlays. Committing it would publish the answers to the experiment —
+# and put every nonce into a tree that git grep can reach from a workspace (V9).
+**/.registry/
+
+# Derived analysis tables — regenerated from the raw run artifacts by
+# lib/wur/aggregate.py, never hand-edited, and large.
+analysis/*.parquet
+
+# install.sh's dependency fallbacks. Both are 100+ MB and live in the repo root.
+/.runner-venv/
+/.venv-analysis/
+
 # Internal working / research docs — kept local, not published (README.md is the public doc)
 HANDOFF.md
 PLAN.md
 GEMINI_INTEGRATION.md
 AGY_DOCS.md
-/docs/
+
+# NOTE: /docs/ was ignored here. It is now TRACKED — docs/IMPLEMENTATION.md,
+# docs/STATUS.md and docs/SPIKES.md are the WUR spec, its data contract, and the
+# measured evidence behind both. They are the reason the design is auditable, so
+# they belong in history, not on one machine.
 
 # Vendored upstream (has its own git repo) — never part of this repo.
 /resources/*

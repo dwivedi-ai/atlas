@@ -1,0 +1,69 @@
+diff --git a/ledgerline/local_reports.py b/ledgerline/local_reports.py
+index 4e0e111..f7aa793 100644
+--- a/ledgerline/local_reports.py
++++ b/ledgerline/local_reports.py
+@@ -97,3 +97,40 @@ def stale_accounts(ledger: Ledger, options: ReportOptions) -> Report:
+ 
+ register("aging", aging, doc=aging.__doc__ or "", origin="local")
+ register("stale-accounts", stale_accounts, doc=stale_accounts.__doc__ or "", origin="local")
++
++
++def cashflow(ledger: Ledger, options: ReportOptions) -> Report:
++    """Net movement of the cash subtree, one row per month and currency."""
++    root = options.account or "assets.cash"
++    scope = options.scoped(ledger)
++    buckets: dict[tuple[str, str], list[Money]] = {}
++    for transaction in scope:
++        month = f"{transaction.date.year}-{transaction.date.month:02d}"
++        for posting in transaction.postings:
++            if not is_under(posting.account, root):
++                continue
++            buckets.setdefault((month, posting.amount.currency), []).append(posting.amount)
++
++    rows: list[list[str]] = []
++    for (month, currency), amounts in sorted(buckets.items()):
++        inflow = sum(a.minor for a in amounts if a.minor > 0)
++        outflow = sum(-a.minor for a in amounts if a.minor < 0)
++        rows.append(
++            [
++                month,
++                currency,
++                Money(inflow, currency).format(with_currency=False),
++                Money(outflow, currency).format(with_currency=False),
++                Money(inflow - outflow, currency).format(with_currency=False),
++            ]
++        )
++    return Report(
++        name="cashflow",
++        title=f"Cash flow ({options.period.label if options.period else 'all dates'})",
++        columns=("month", "currency", "inflow", "outflow", "net"),
++        rows=rows,
++        meta={"root": root, "months": sorted({m for m, _ in buckets})},
++    )
++
++
++register("cashflow", cashflow, doc=cashflow.__doc__ or "", origin="local")
+diff --git a/tests/test_reports.py b/tests/test_reports.py
+index b25240c..b371b42 100644
+--- a/tests/test_reports.py
++++ b/tests/test_reports.py
+@@ -112,3 +112,19 @@ def test_register_replaces_a_name(ledger: Ledger):
+         assert run("transaction-log", ledger) is marker
+     finally:
+         register("transaction-log", original)
++
++
++def test_cashflow_has_a_month_axis(ledger: Ledger):
++    report = run("cashflow", ledger, ReportOptions(period=Period.parse("2024-Q4")))
++    assert report.columns == ("month", "currency", "inflow", "outflow", "net")
++    assert report.meta["months"] == ["2024-10", "2024-11", "2024-12"]
++
++
++def test_cashflow_net_matches_the_ledger(ledger: Ledger):
++    report = run("cashflow", ledger, ReportOptions())
++    usd_net = sum(
++        int(round(float(row[4]) * 100))
++        for row in report.rows
++        if row[1] == "USD"
++    )
++    assert usd_net == ledger.balance("assets.cash", currency="USD").minor

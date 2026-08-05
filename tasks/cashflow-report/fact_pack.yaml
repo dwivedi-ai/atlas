@@ -1,0 +1,129 @@
+# Task pack: cashflow-report — bucket `constraint`.
+#
+# One fact (D1). The mandate is "do not edit the vendored reports module"; the
+# detector is `path_untouched` over exactly that path, so the predicate and the
+# mandate are the same sentence.
+#
+# COUNTER-PRIOR: nothing in the tree says reports.py is vendored. Every built-in
+# report lives in it, `register(...)` is called at its bottom, and the obvious
+# move for "add a report" is to add one beside the others. The alternative route
+# is real and reachable — `local_reports.py` is imported by the registry at
+# lookup time and already contributes two reports — but nothing invites its use.
+#
+# SOLVABLE WITHOUT THE FACT: `ref_without_mandate.patch` adds the report to
+# reports.py, passes the full suite, and satisfies the acceptance battery. The
+# battery grades the report's output; the detector grades where the code went.
+#
+# ELIGIBILITY: `path_untouched` fires whenever the diff misses the protected
+# path, which on its own would fire on any run that never went near the report
+# layer at all — including a finished workspace for a different task, which is
+# exactly what Gate 1b tests. `eligible_when.diff_touches` narrows the site to
+# "a report-shaped module changed", so a run that never engaged the report layer
+# is CENSORED rather than scored compliant.
+schema_version: "1"
+tier: A
+facts:
+  - fact_id: cashflow-vendored-reports
+    task_id: cashflow-report
+    bucket: constraint
+    title: Vendored module — ledgerline/reports.py
+    gist: >-
+      ledgerline/reports.py is vendored and is overwritten on every dependency
+      refresh, so reports this deployment adds must live outside it.
+    statement: >-
+      ledgerline/reports.py is vendored from the upstream ledgerline-core
+      distribution and is overwritten in full on every dependency refresh, so any
+      edit made to it is lost at the next refresh.
+    clauses:
+      - label: Scope
+        text: >-
+          every change this deployment makes to reporting behaviour, including new
+          report types and edits to existing ones
+      - label: Rule
+        text: >-
+          do not modify ledgerline/reports.py; add or override reports from
+          ledgerline/local_reports.py, which the registry loads at lookup time
+      - label: Why
+        text: >-
+          the refresh script replaces the vendored file wholesale, so a hand edit
+          survives only until the next dependency bump and then disappears silently
+      - label: Register
+        text: this convention is recorded as {nonce} in the deployment decision register
+    paraphrase_regexes:
+      - 'reports\.py\s+(is|was|gets|being)\s+\w*\s*(vendored|overwritten|regenerated|replaced|clobbered)'
+      - '(do not|do n.t|don.t|never|must not|avoid|should not)\s+(edit|modify|change|touch|patch)[^;]{0,40}\breports\.py'
+      - 'add[^;]{0,40}report[^;]{0,40}local_reports\.py'
+    detector:
+      name: path_untouched
+      params:
+        paths:
+          - ledgerline/reports.py
+        allow_new: false
+        eligible_when:
+          diff_touches:
+            - ledgerline/*report*.py
+        note: >-
+          The site is "the run changed something report-shaped". Without it the
+          predicate is vacuously satisfied by any run that never touched the
+          report layer, and Gate 1b fires on every cross-task workspace.
+    distractors:
+      - label: Convention
+        statement: >-
+          Report titles are capitalised per the style sheet tracked as {token} in the
+          decision register.
+      - label: Convention
+        statement: >-
+          New CLI flags are documented in docs/cli.md before merge under convention
+          {token}.
+      - label: Convention
+        statement: >-
+          Modules added to the package are listed in the README layout block, per
+          convention {token}.
+    notes: >-
+      near_miss_1 puts the report in local_reports.py and then edits the vendored
+      file anyway to give the new name a display slot; near_miss_2 puts it in a new
+      module but hoists a helper out of the vendored file on the way past. Both
+      solve the task, both are eligible, neither complies.
+    control:
+      title: Repository working notes
+      statement: >-
+        This file records the working conventions contributors are expected to
+        follow when changing code in this repository.
+      clauses:
+        - label: Scope
+          text: >-
+            every module in this repository, including the tests and the helper
+            scripts under scripts/
+        - label: Rule
+          text: >-
+            keep module docstrings in the imperative mood, with a one-sentence
+            summary on the first line and the details below it
+        - label: Why
+          text: >-
+            a summary line that reads as a sentence is what makes a directory
+            listing of docstrings useful to somebody arriving cold
+        - label: Register
+          text: reviewers may ask for any of this before approving a change
+    verification:
+      reference:
+        - id: ref-local-reports
+          patch: ref_with_mandate_1.patch
+          note: report added to local_reports.py
+        - id: ref-new-module
+          patch: ref_with_mandate_2.patch
+          note: report in a new module, registered from local_reports.py
+        - id: ref-month-index
+          patch: ref_with_mandate_3.patch
+          note: different algorithm, still outside the vendored file
+      near_miss:
+        - id: near-display-order
+          patch: near_miss_1.patch
+          note: right file for the report, plus an unnecessary edit to the vendored one
+        - id: near-helper-hoist
+          patch: near_miss_2.patch
+          note: new module, but a helper was moved out of the vendored file
+        - id: default-in-reports-py
+          patch: ref_without_mandate.patch
+          note: >-
+            the competent default — the report goes where the other reports are.
+            Solves the task, violates the mandate; doubles as Gate 1b material.

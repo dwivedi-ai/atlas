@@ -1,21 +1,37 @@
 #!/usr/bin/env python3
 """
-judge.py — the NL-acceptance grader. Two phases:
+judge.py — the NL-acceptance grader.
 
-  --synthesize   Author a mechanical test battery from the job's plain-English
-                 `accept` text (the agent only ever sees the acceptance, never any
-                 solution), then FLOOR-CHECK it against the pristine base worktree
-                 (new-behavior criteria must fail on base). Writes:
-                   grader/criteria.json   the decomposed, checkable criteria
-                   grader/manifest.json   floor-check results per criterion
-                   grader/floor.log       human-readable floor-check log
+RESPONSIBILITY
+  Turn a job's plain-English `accept` text into a mechanical battery, prove that
+  battery DISCRIMINATES, and grade one run against it.
 
-  --grade        Run the battery against one run's workspace, LLM-adjudicate any
-                 non-mechanical ("llm") criteria, and write the run's judge.json
-                 (verdict + score + per-criterion evidence).
+  --synthesize   Author criteria from `accept` (the agent only ever sees the acceptance,
+                 never any solution), then FLOOR-CHECK them against the pristine base
+                 worktree: new-behavior criteria must FAIL on base or they measure
+                 nothing. Writes grader/<task>/{criteria.json, manifest.json, floor.log}.
+  --grade        Run the battery against one run's workspace, LLM-adjudicate the
+                 non-mechanical criteria, write the run's judge.json.
+
+INPUTS   job.yaml (via jobspec), the pinned base SHA, a run's workspace + git.patch.
+OUTPUTS  grader/<task>/criteria.json + manifest.json + floor.log; runs/<id>/judge.json.
+
+TWO DEFECTS THIS FILE USED TO HAVE
+  1. `synthesize` returned EARLY when criteria.json already existed, so a HAND-WRITTEN
+     criteria pack — the normal way a WUR detector battery arrives — was never floor
+     checked. An unverified battery that passes on the base tree measures nothing and
+     reports 1.00. Now the early return skips only the LLM SYNTHESIS; the floor check
+     always runs, and floor_check() is importable so other callers reuse it.
+  2. `met = bool(r["passed"])` silently turned "the criterion could not be evaluated"
+     (passed is None — an eval error, a timeout, a missing command) into a hard FAIL,
+     which is indistinguishable in judge.json from a criterion the candidate actually
+     failed. An unevaluable criterion is now `met: None` with an `error`, and the score
+     is computed over the criteria that were actually GRADED. A run whose battery blew
+     up scores None, not 0.0.
 
 The judge uses the SAME model the user chose for the job (one logged-in CLI), via
-lib/agent.py. Synthesis/adjudication are separate invocations from the task run.
+lib/agent.py, under a per-call CLAUDE_CONFIG_DIR so it carries no more ambient context
+than the task run does. Synthesis/adjudication are separate invocations from the task run.
 """
 from __future__ import annotations
 
@@ -44,6 +60,21 @@ Each criterion is one JSON object with these fields:
                    `stdout` (str, stdout+stderr combined, stripped). Examples:
                    "exit_code == 0", "int(stdout.strip()) >= 1", "len(stdout) > 0".
                    For llm: null
+
+                   IT IS EVALUATED IN A SANDBOX WITH NO __builtins__. Available:
+                   all any len sum min max sorted set list dict tuple map filter
+                   range enumerate zip abs round int str float bool repr
+                   isinstance, plus the modules `re` and `json` ALREADY BOUND.
+                   Write `re.search(...)` and `json.loads(stdout)` directly.
+                   `__import__`, `open`, `eval` and `exec` are ABSENT — a
+                   condition using them raises, scores the criterion None, and
+                   fails the floor-check.
+
+                   DO NOT PIPE the command (`cmd | tail -5`, `cmd | head`): the
+                   shell reports the LAST stage's status, so `exit_code` becomes
+                   tail's 0 and stops meaning anything. If you only need the tail
+                   of the output, keep the command unpiped and slice in the
+                   condition instead (`stdout` is already captured whole).
   "expect_on_base":"fail" if this checks NEW behavior the task is supposed to add
                    (so it should FAIL on the unmodified repo), or "pass" if it is an
                    invariant that should already hold (e.g. "existing tests pass")."""
@@ -202,75 +233,57 @@ def _resolve_task(spec: dict, task_id: str | None) -> dict:
     raise RuntimeError(f"no such task id: {task_id}")
 
 
-def synthesize(job_dir: Path, task_id: str | None = None, force: bool = False) -> dict:
+def _normalize_criteria(criteria: dict) -> dict:
+    """Fill the fields the battery and the floor check require. Idempotent, so it is safe
+    on a hand-written pack as well as on an LLM-authored one."""
+    for i, c in enumerate(criteria.get("criteria") or [], 1):
+        c.setdefault("id", f"C{i}")
+        c.setdefault("kind", "mechanical" if c.get("command") else "llm")
+        c.setdefault("expect_on_base", "fail")
+        c.setdefault("description", c.get("criterion", c["id"]))
+    return criteria
+
+
+def floor_check(job_dir: Path, task_id: str, criteria: list[dict],
+                sha: str | None = None, write: bool = True) -> dict:
+    """Run `criteria` against a PRISTINE base worktree and report whether each one
+    discriminates. Importable on purpose — a hand-written battery (every WUR detector
+    pack) must go through exactly this, and it is also what the mandate-detector gate
+    reuses.
+
+    A "new behavior" criterion (`expect_on_base: "fail"`) that PASSES on the untouched
+    repo tests nothing: every run scores it 1 regardless of what the agent did. A
+    criterion that cannot be EVALUATED on base (passed is None) is `skip`, which matches
+    neither expectation and is therefore reported as non-discriminating rather than
+    quietly treated as a fail.
+
+    Returns the manifest {floor_ok, criteria:[{id, kind, expect_on_base, floor_passed,
+    discriminating, output}], sha, n_mechanical, n_llm} and, with write=True, also
+    writes grader/<task>/manifest.json + floor.log.
+    """
     job_dir = Path(job_dir).resolve()
-    spec = jobspec.load(job_dir)
-    task = _resolve_task(spec, task_id)
-    task_id = task["id"]
     grader = job_dir / "grader" / task_id
-    if (grader / "criteria.json").exists() and not force:
-        print(f"[skip] grader already synthesized: {grader/'criteria.json'}")
-        return json.loads((grader / "criteria.json").read_text())
-
-    sha = spec["repo"]["pinned_sha"]
-    model = spec["model"]
-    max_seconds = int(spec.get("max_seconds") or 0)
-    grader.mkdir(parents=True, exist_ok=True)
-
-    scratch = job_dir / f".synth-src-{task_id}"
+    scratch = job_dir / f".floor-{task_id}"
+    # A FRESH worktree is pristine by construction. The old code reused the synthesis
+    # worktree and scrubbed it with reset --hard + clean -fdx, which had to be exactly
+    # right or the synthesis agent's own litter would satisfy a "no unrelated files"
+    # invariant. Checking out again is cheaper than being sure.
     _remove_worktree(job_dir, scratch)
-    _flocked_worktree(job_dir, ["add", "--detach", str(scratch), sha])
+    _flocked_worktree(job_dir, ["add", "--detach", str(scratch)] + ([sha] if sha else []))
     venv = job_dir / ".venv"
     if venv.exists() and not (scratch / "venv").exists():
         (scratch / "venv").symlink_to(venv)
     _exclude_venv(scratch)
-
     try:
-        tree = _repo_tree(scratch)
-        prompt = _synthesis_prompt(task["task"], task["accept"], tree)
-        criteria = None
-        attempts = 3
-        for attempt in range(1, attempts + 1):
-            print(f"[synth] authoring criteria (attempt {attempt}/{attempts}) with {model} ...")
-            # a fresh attempt must not inherit a previous attempt's partial file
-            (scratch / "criteria.json").unlink(missing_ok=True)
-            text, code = agent.run_text(model, prompt, scratch, max_seconds)
-            data = _load_criteria_file(scratch) or _extract_json(text)
-            if data and isinstance(data.get("criteria"), list) and data["criteria"]:
-                criteria = data
-                break
-            print(f"[synth] attempt {attempt} produced no valid criteria"
-                  + (" — retrying" if attempt < attempts else ""), file=sys.stderr)
-        if not criteria:
-            criteria = {"criteria": []}
-
-        # normalize/validate fields
-        for i, c in enumerate(criteria["criteria"], 1):
-            c.setdefault("id", f"C{i}")
-            c.setdefault("kind", "mechanical" if c.get("command") else "llm")
-            c.setdefault("expect_on_base", "fail")
-            c.setdefault("description", c.get("criterion", c["id"]))
-        (grader / "criteria.json").write_text(json.dumps(criteria, indent=2))
-
-        # ── floor-check against the PRISTINE base worktree ──
-        # The synthesis agent authored criteria.json (and possibly scratch files)
-        # inside `scratch`. Restore it to an exact base checkout first — otherwise
-        # "no unrelated files" style invariants see the synthesis litter and a
-        # new-behavior check could accidentally pass. Keep only the venv symlink.
-        subprocess.run(["git", "reset", "--hard", "HEAD"], cwd=str(scratch),
-                       capture_output=True, text=True)
-        subprocess.run(["git", "clean", "-fdx", "-e", "venv"], cwd=str(scratch),
-                       capture_output=True, text=True)
-        floor = battery.run(criteria["criteria"], scratch)
-        manifest = {"criteria": [], "floor_ok": True}
-        log_lines = [f"Floor-check (pristine base @ {sha[:10]})", ""]
-        for c in criteria["criteria"]:
+        floor = battery.run(criteria, scratch)
+        manifest: dict = {"criteria": [], "floor_ok": True, "sha": sha}
+        log_lines = [f"Floor-check (pristine base @ {(sha or 'HEAD')[:10]})", ""]
+        for c in criteria:
             res = floor.get(c["id"], {"passed": None, "output": ""})
-            passed = res["passed"]
+            passed = res.get("passed")
             exp = c.get("expect_on_base", "fail")
             if c.get("kind") != "mechanical":
-                status = "n/a (llm)"
-                ok = True
+                status, ok = "n/a (llm)", True
             else:
                 actual = "pass" if passed else ("fail" if passed is False else "skip")
                 ok = (actual == exp)
@@ -280,21 +293,94 @@ def synthesize(job_dir: Path, task_id: str | None = None, force: bool = False) -
             manifest["criteria"].append({
                 "id": c["id"], "kind": c.get("kind"), "expect_on_base": exp,
                 "floor_passed": passed, "discriminating": ok,
+                "output": (res.get("output") or "")[:300],
             })
             log_lines.append(f"[{c['id']}] {status}")
-            log_lines.append(f"        {c['description']}")
-            if res.get("output"):
-                log_lines.append(f"        out: {res['output'][:160].splitlines()[0] if res['output'] else ''}")
-        (grader / "manifest.json").write_text(json.dumps(manifest, indent=2))
-        (grader / "floor.log").write_text("\n".join(log_lines) + "\n")
-
-        n_mech = sum(1 for c in criteria["criteria"] if c.get("kind") == "mechanical")
-        n_llm = len(criteria["criteria"]) - n_mech
-        print(f"[synth] {len(criteria['criteria'])} criteria ({n_mech} mechanical, {n_llm} llm); "
-              f"floor_ok={manifest['floor_ok']} -> {grader}")
-        return criteria
+            log_lines.append(f"        {c.get('description', '')}")
+            out = res.get("output") or ""
+            if out:
+                log_lines.append(f"        out: {out[:160].splitlines()[0]}")
+        manifest["n_mechanical"] = sum(1 for c in criteria if c.get("kind") == "mechanical")
+        manifest["n_llm"] = len(criteria) - manifest["n_mechanical"]
+        if write:
+            grader.mkdir(parents=True, exist_ok=True)
+            (grader / "manifest.json").write_text(json.dumps(manifest, indent=2))
+            (grader / "floor.log").write_text("\n".join(log_lines) + "\n")
+        return manifest
     finally:
         _remove_worktree(job_dir, scratch)
+
+
+def _synthesize_criteria(job_dir: Path, spec: dict, task: dict, sha: str) -> dict:
+    """The LLM half: author criteria.json in a scratch worktree. Returns the pack."""
+    model = jobspec._model_of(spec)
+    max_seconds = int(spec.get("max_seconds") or 0)
+    scratch = job_dir / f".synth-src-{task['id']}"
+    _remove_worktree(job_dir, scratch)
+    _flocked_worktree(job_dir, ["add", "--detach", str(scratch), sha])
+    venv = job_dir / ".venv"
+    if venv.exists() and not (scratch / "venv").exists():
+        (scratch / "venv").symlink_to(venv)
+    _exclude_venv(scratch)
+    try:
+        tree = _repo_tree(scratch)
+        prompt = _synthesis_prompt(task["task"], task["accept"], tree)
+        criteria = None
+        attempts = 3
+        for attempt in range(1, attempts + 1):
+            print(f"[synth] authoring criteria (attempt {attempt}/{attempts}) with {model} ...")
+            # a fresh attempt must not inherit a previous attempt's partial file
+            (scratch / "criteria.json").unlink(missing_ok=True)
+            # config_dir: the judge runs under the same isolation as the task (§6.5).
+            text, _code = agent.run_text(model, prompt, scratch, max_seconds,
+                                         config_dir=str(scratch / ".judge_home"))
+            data = _load_criteria_file(scratch) or _extract_json(text)
+            if data and isinstance(data.get("criteria"), list) and data["criteria"]:
+                criteria = data
+                break
+            print(f"[synth] attempt {attempt} produced no valid criteria"
+                  + (" — retrying" if attempt < attempts else ""), file=sys.stderr)
+        return criteria or {"criteria": []}
+    finally:
+        _remove_worktree(job_dir, scratch)
+
+
+def synthesize(job_dir: Path, task_id: str | None = None, force: bool = False) -> dict:
+    """Author (or reuse) the criteria pack, then ALWAYS floor-check it.
+
+    `force` and an existing criteria.json control the LLM SYNTHESIS ONLY. The floor check
+    is not optional: a hand-written pack is exactly the case where nobody has ever proved
+    the criteria fail on the base tree.
+    """
+    job_dir = Path(job_dir).resolve()
+    spec = jobspec.load(job_dir)
+    task = _resolve_task(spec, task_id)
+    task_id = task["id"]
+    grader = job_dir / "grader" / task_id
+    grader.mkdir(parents=True, exist_ok=True)
+    sha = spec["repo"]["pinned_sha"]
+
+    existing = _load_criteria_file(grader) if not force else None
+    if existing and isinstance(existing.get("criteria"), list) and existing["criteria"]:
+        print(f"[skip] criteria already present, skipping LLM synthesis: {grader/'criteria.json'}")
+        criteria = _normalize_criteria(existing)
+    else:
+        criteria = _normalize_criteria(_synthesize_criteria(job_dir, spec, task, sha))
+    (grader / "criteria.json").write_text(json.dumps(criteria, indent=2))
+
+    if not criteria["criteria"]:
+        print("[synth] no criteria — skipping floor-check", file=sys.stderr)
+        return criteria
+
+    manifest = floor_check(job_dir, task_id, criteria["criteria"], sha=sha)
+    n_mech, n_llm = manifest["n_mechanical"], manifest["n_llm"]
+    print(f"[synth] {len(criteria['criteria'])} criteria ({n_mech} mechanical, {n_llm} llm); "
+          f"floor_ok={manifest['floor_ok']} -> {grader}")
+    if not manifest["floor_ok"]:
+        bad = [c["id"] for c in manifest["criteria"] if not c["discriminating"]]
+        print(f"[synth] WARNING: {bad} do not discriminate on the base tree — "
+              f"they score the same for every run and measure nothing.", file=sys.stderr)
+    return criteria
 
 
 # ── grade ────────────────────────────────────────────────────────────────────
@@ -331,10 +417,12 @@ def grade(job_dir: Path, run_id: str, task_id: str | None = None, agent_exit_cod
         votes = max(1, int(spec.get("judge_votes") or 1))
         tally: dict[str, list[bool]] = {c["id"]: [] for c in llm_criteria}
         evidence: dict[str, str] = {}
-        for v in range(votes):
+        model = jobspec._model_of(spec)
+        for _v in range(votes):
             with tempfile.TemporaryDirectory() as tmp:
-                text, _ = agent.run_text(spec["model"], _adjudication_prompt(diff, llm_criteria),
-                                         tmp, int(spec.get("max_seconds") or 0))
+                text, _ = agent.run_text(model, _adjudication_prompt(diff, llm_criteria),
+                                         tmp, int(spec.get("max_seconds") or 0),
+                                         config_dir=str(Path(tmp) / ".judge_home"))
             data = _extract_json(text) or {}
             for item in data.get("verdicts", []):
                 cid = item.get("id")
@@ -342,49 +430,85 @@ def grade(job_dir: Path, run_id: str, task_id: str | None = None, agent_exit_cod
                     tally[cid].append(bool(item.get("met")))
                     evidence[cid] = item.get("evidence", "")
         for cid, mets in tally.items():
-            met = (sum(mets) > len(mets) / 2) if mets else False
-            llm_verdicts[cid] = {"met": met, "evidence": evidence.get(cid, "(no response)")}
+            # No vote at all is NOT a "no": the adjudicator failed to answer, which is an
+            # unevaluated criterion, not a failed one.
+            met = (sum(mets) > len(mets) / 2) if mets else None
+            llm_verdicts[cid] = {
+                "met": met,
+                "evidence": evidence.get(cid, "(no response)"),
+                "error": None if mets else "adjudicator returned no verdict for this criterion",
+            }
 
-    # 3) assemble per-criterion verdicts
+    # 3) assemble per-criterion verdicts.
+    #    met is TRI-STATE: True / False / None. None means "could not be evaluated" — an
+    #    eval error in the pass_condition, a timeout, a missing command, an adjudicator
+    #    that did not answer. Coercing it to False (the old `bool(r["passed"])`) made a
+    #    broken battery indistinguishable from a failed solution and silently dragged the
+    #    score toward 0.
     crit_out = []
-    met_count = 0
     for c in criteria:
         cid = c["id"]
         if c.get("kind") == "mechanical":
-            r = mech_results.get(cid, {"passed": None, "output": ""})
-            met = bool(r["passed"])
-            src, ev = "mechanical", (r["output"] or "")[:300]
+            r = mech_results.get(cid, {"passed": None, "output": "",
+                                       "error": "criterion produced no battery result"})
+            passed = r.get("passed")
+            met = None if passed is None else bool(passed)
+            src, ev = "mechanical", (r.get("output") or "")[:300]
+            err = r.get("error") or (None if met is not None else
+                                     "criterion could not be evaluated (see evidence)")
         else:
-            r = llm_verdicts.get(cid, {"met": False, "evidence": ""})
-            met = bool(r["met"])
-            src, ev = "llm", r["evidence"]
-        met_count += 1 if met else 0
-        crit_out.append({"id": cid, "criterion": c["description"], "met": met,
-                         "source": src, "evidence": ev})
+            r = llm_verdicts.get(cid, {"met": None, "evidence": "",
+                                       "error": "criterion was never adjudicated"})
+            met = r.get("met")
+            met = None if met is None else bool(met)
+            src, ev = "llm", r.get("evidence", "")
+            err = r.get("error")
+        entry = {"id": cid, "criterion": c["description"], "met": met,
+                 "source": src, "evidence": ev}
+        if met is None:
+            entry["error"] = err or "not evaluated"
+        crit_out.append(entry)
 
     total = len(criteria)
-    score = met_count / total if total else None
+    graded = [c for c in crit_out if c["met"] is not None]
+    errored = [c for c in crit_out if c["met"] is None]
+    met_count = sum(1 for c in graded if c["met"])
+    # Score over the criteria that were actually GRADED. A battery that blew up scores
+    # None (verdict "error"), never 0.0 — those are different facts about a run.
+    score = (met_count / len(graded)) if graded else None
     if agent_exit_code == 124:
         verdict = "timeout"
-    elif score == 1.0:
+    elif score is None:
+        verdict = "error"
+    elif score == 1.0 and not errored:
         verdict = "accepted"
-    elif score == 0.0:
+    elif score == 0.0 and not errored:
         verdict = "rejected"
     else:
         verdict = "partial"
 
     n_mech = sum(1 for c in criteria if c.get("kind") == "mechanical")
-    mech_passed = sum(1 for c in crit_out if c["source"] == "mechanical" and c["met"])
+    mech_passed = sum(1 for c in crit_out if c["source"] == "mechanical" and c["met"] is True)
+    mech_errored = sum(1 for c in crit_out if c["source"] == "mechanical" and c["met"] is None)
+    reasoning = f"{met_count}/{len(graded)} graded criteria met"
+    if errored:
+        reasoning += (f"; {len(errored)}/{total} could not be evaluated "
+                      f"({', '.join(c['id'] for c in errored)})")
     judge = {
         "run_id": run_id,
         "verdict": verdict,
         "score": score,
         "criteria": crit_out,
-        "battery": {"total": n_mech, "passed": mech_passed},
-        "reasoning": f"{met_count}/{total} criteria met",
+        "battery": {"total": n_mech, "passed": mech_passed, "errored": mech_errored},
+        "criteria_total": total,
+        "criteria_graded": len(graded),
+        "criteria_errored": len(errored),
+        "reasoning": reasoning,
     }
     out.write_text(json.dumps(judge, indent=2))
-    print(f"[grade] {run_id}: verdict={verdict} score={score} ({met_count}/{total})")
+    score_s = f"{score:.3f}" if isinstance(score, float) else "None"
+    print(f"[grade] {run_id}: verdict={verdict} score={score_s} "
+          f"({met_count}/{len(graded)} graded, {len(errored)} unevaluable, {total} total)")
     return judge
 
 

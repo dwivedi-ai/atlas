@@ -1,0 +1,98 @@
+; GENERATED FILE — produced by scripts/gen_fixtures.py.
+; Edit the generator, not this file.
+
+2024-01-03 Rent for January  #recurring
+    expenses.rent                  3200.00 USD
+    assets.cash.checking
+
+2024-01-15 January payroll  #payroll
+    expenses.salaries             17600.00 USD
+    assets.cash.checking
+
+2024-02-03 Rent for February  #recurring
+    expenses.rent                  3200.00 USD
+    assets.cash.checking
+
+2024-02-15 February payroll  #payroll
+    expenses.salaries             17600.00 USD
+    assets.cash.checking
+
+2024-03-03 Rent for March  #recurring
+    expenses.rent                  3200.00 USD
+    assets.cash.checking
+
+2024-03-15 March payroll  #payroll
+    expenses.salaries             17600.00 USD
+    assets.cash.checking
+
+2024-04-03 Rent for April  #recurring
+    expenses.rent                  3200.00 USD
+    assets.cash.checking
+
+2024-04-15 April payroll  #payroll
+    expenses.salaries             17600.00 USD
+    assets.cash.checking
+
+2024-05-03 Rent for May  #recurring
+    expenses.rent                  3200.00 USD
+    assets.cash.checking
+
+2024-05-15 May payroll  #payroll
+    expenses.salaries             17600.00 USD
+    assets.cash.checking
+
+2024-06-03 Rent for June  #recurring
+    expenses.rent                  3200.00 USD
+    assets.cash.checking
+
+2024-06-15 June payroll  #payroll
+    expenses.salaries             17600.00 USD
+    assets.cash.checking
+
+2024-07-03 Rent for July  #recurring
+    expenses.rent                  3200.00 USD
+    assets.cash.checking
+
+2024-07-15 July payroll  #payroll
+    expenses.salaries             17600.00 USD
+    assets.cash.checking
+
+2024-08-03 Rent for August  #recurring
+    expenses.rent                  3200.00 USD
+    assets.cash.checking
+
+2024-08-15 August payroll  #payroll
+    expenses.salaries             17600.00 USD
+    assets.cash.checking
+
+2024-09-03 Rent for September  #recurring
+    expenses.rent                  3200.00 USD
+    assets.cash.checking
+
+2024-09-15 September payroll  #payroll
+    expenses.salaries             17600.00 USD
+    assets.cash.checking
+
+2024-10-03 Rent for October  #recurring
+    expenses.rent                  3200.00 USD
+    assets.cash.checking
+
+2024-10-15 October payroll  #payroll
+    expenses.salaries             18400.00 USD
+    assets.cash.checking
+
+2024-11-03 Rent for November  #recurring
+    expenses.rent                  3200.00 USD
+    assets.cash.checking
+
+2024-11-15 November payroll  #payroll
+    expenses.salaries             18400.00 USD
+    assets.cash.checking
+
+2024-12-03 Rent for December  #recurring
+    expenses.rent                  3200.00 USD
+    assets.cash.checking
+
+2024-12-15 December payroll  #payroll  #closing
+    expenses.salaries             18400.00 USD
+    assets.cash.checking

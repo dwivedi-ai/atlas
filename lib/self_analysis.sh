@@ -25,7 +25,11 @@ LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 : "${MAX_SECONDS:=0}"
 
 JOB_DIR="$(cd "$JOB_DIR" && pwd)"
-RUN_DIR="$JOB_DIR/runs/$RUN_ID"
+# RUN_DIR is an input now: a wur run lives under $ATLAS_RUNS_ROOT and is only
+# reachable from the job via a symlink, so the legacy path is a default, not a
+# derivation. `pwd -P` because everything below compares real paths.
+: "${RUN_DIR:=$JOB_DIR/runs/$RUN_ID}"
+RUN_DIR="$(cd "$RUN_DIR" 2>/dev/null && pwd -P || echo "$JOB_DIR/runs/$RUN_ID")"
 WORKSPACE="$RUN_DIR/workspace"
 
 field() { python3 "$LIB_DIR/jobspec.py" field "$JOB_DIR" "$1"; }
@@ -96,9 +100,14 @@ ANALYSIS_EXIT=0
 (
   cd "$WORKSPACE"
   if [[ "$AGENT_ID" == claude-* ]]; then
+    # < /dev/null: every one-shot claude invocation without --input-format
+    # stream-json otherwise stalls 3 s and writes "Warning: no stdin data
+    # received in 3s" to stderr, which a naive `[ -s stderr ]` check reads as a
+    # failed reflection pass (V19).
     timeout "$MAX_SECONDS" env -u ANTHROPIC_API_KEY claude \
       --model "$AGENT_ID" --output-format json --print \
       --permission-mode bypassPermissions "$PROMPT" \
+      < /dev/null \
       > "$RUN_DIR/analysis_stdout.json" 2>> "$RUN_DIR/analysis_stderr.txt"
   elif [[ "$AGENT_ID" == "codex" ]]; then
     timeout "$MAX_SECONDS" codex exec \

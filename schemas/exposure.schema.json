@@ -1,0 +1,146 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "exposure.schema.json",
+  "title": "WurExposure",
+  "description": "One row of $RUN_DIR/exposure.jsonl (STATUS.md \u00a74.2): one (fact x model-visible region) hit. `model_visible` and `channel_inbound` are fixed per channel; `inbound` is the EFFECTIVE value after regions.py forces it off for a tool error body (harness-authored text is not a workspace channel). Only exact inbound hits set first_exposure_seq.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "run_id",
+    "fact_id",
+    "seq",
+    "channel",
+    "match_form",
+    "model_visible",
+    "inbound",
+    "counts_toward_read",
+    "offset",
+    "bytes_before"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1"
+    },
+    "run_id": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9._-]+$"
+    },
+    "fact_id": {
+      "type": "string"
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "region_idx": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "channel": {
+      "type": "string"
+    },
+    "source": {
+      "type": "string",
+      "enum": [
+        "stream",
+        "transcript",
+        "gate",
+        "driver",
+        "manifest"
+      ]
+    },
+    "model_visible": {
+      "type": "boolean"
+    },
+    "inbound": {
+      "type": "boolean"
+    },
+    "channel_inbound": {
+      "type": "boolean"
+    },
+    "counts_toward_read": {
+      "type": "boolean"
+    },
+    "match_form": {
+      "type": "string",
+      "enum": [
+        "exact",
+        "lower",
+        "nohyphen",
+        "regex"
+      ]
+    },
+    "matched_token": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "matched_regex": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "matched_text": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "offset": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "bytes_before": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "n_hits": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "region_bytes": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "tool": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "tool_use_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "message_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "ts": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "is_error": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "sets_first_exposure": {
+      "type": "boolean"
+    },
+    "extra": {
+      "type": "object"
+    }
+  }
+}
