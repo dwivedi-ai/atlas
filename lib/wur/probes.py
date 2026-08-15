@@ -240,7 +240,7 @@ def build(turns: Sequence[Any], rows: Sequence[dict], plan: dict,
         seqs = sorted({s for t in group for s in t.seqs})
 
         # The two id lists lib/extract/core.py needs to compute `tool_calls_task`
-        # ('s difficulty-band metric = tool calls EXCLUDING probe turns).
+        # (the difficulty-band metric = tool calls EXCLUDING probe turns).
         # Without them core.py falls back to tool_calls_task == tool_calls_total,
         # which is silently wrong on every probed run rather than absent.
         seqset = set(seqs)

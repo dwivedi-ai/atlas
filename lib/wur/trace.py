@@ -412,7 +412,7 @@ def build_row(run_dir: str | os.PathLike, card: Any, *, exposure_rows: Sequence[
     elif parse_rate is not None and parse_rate < PARSE_OK_GATE:
         integrity = "parse_degraded"
 
-    #: for every row with read = 1 AND ever_mention = 1,
+    # Ordering invariant: for every row with read = 1 AND ever_mention = 1,
     # first_exposure_seq < first_mention_seq. Checked on the EMITTED position, so
     # the invariant covers the thinking-only fallback too.
     ordering_violation = (read is True and ever_mention

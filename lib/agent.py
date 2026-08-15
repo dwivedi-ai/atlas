@@ -4,7 +4,7 @@ agent.py — headless invocation of a coding agent, and the ONE place a model na
 turns into a concrete backend + model id.
 
 RESPONSIBILITY
-  1. `BACKENDS` / `resolve_agent()` — the two-level model registry (§6.5). `backend`
+  1. `BACKENDS` / `resolve_agent()` — the two-level model registry. `backend`
      picks the CLI adapter; `model` is the concrete id it is invoked with; `effort` is
      the backend-specific reasoning knob. This replaces the old `resolve_agent_id`,
      which hard-pinned `claude-sonnet-4-6` in a chain of `if` statements, and the
@@ -33,13 +33,13 @@ MODEL PIN
   sizes a Sonnet 5 run without rescaling — and see V7, those baselines are inflated
   1.0x-4.9x on top of that.
 
-HYGIENE (§6.5, verified by spike S2)
+HYGIENE (verified by measurement)
   Every one-shot claude invocation runs with a per-call `CLAUDE_CONFIG_DIR` when one is
   given, `--setting-sources project`, `--strict-mcp-config`, `--disable-slash-commands`
   and the frozen six-tool allowlist, so the judge and the fact-authoring calls sit under
   the same isolation as the task run. stdin is /dev/null on every backend: without it
   each claude call pays a 3 s stall and writes `Warning: no stdin data received in 3s`
-  to stderr, which a naive `[ -s stderr ]` health check reads as failure (V19).
+  to stderr, which a naive `[ -s stderr ]` health check reads as failure.
 """
 from __future__ import annotations
 
@@ -49,7 +49,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-# The frozen tool allowlist (V10). `--tools` silently ignores names it does not honour,
+# The frozen tool allowlist. `--tools` silently ignores names it does not honour,
 # so this list is asserted positively at preflight against `system/init.tools`, never
 # assumed. Task and judge share it so the judge is not a differently-privileged agent.
 FROZEN_TOOLS = ("Bash", "Read", "Write", "Edit", "Glob", "Grep")
@@ -280,6 +280,10 @@ def _agy():
     return agy
 
 
+
+
+
+
 def _agy_final_text(cwd: str, log_path: str, stdout: str, gemini_dir: str | None = None) -> str:
     """Clean final answer from the agy transcript (stdout is noisy narrative)."""
     agy = _agy()
@@ -356,7 +360,7 @@ def _seed_claude_home(config_dir: str) -> str:
 def claude_argv(model: str, prompt: str, *, tools: tuple[str, ...] | None = FROZEN_TOOLS,
                 settings: str | os.PathLike | None = None, hygiene: bool = True,
                 output_format: str = "json") -> list[str]:
-    """The one-shot claude command line. Exposed so preflight/canary can hash it (§5.1(6)).
+    """The one-shot claude command line. Exposed so preflight/canary can hash it.
 
     Deliberately NOT here: --input-format stream-json (that is the driver's channel, and the
     child does not exit after `result` under it, V15) and --max-turns (no such flag in 2.1.222).
@@ -416,7 +420,7 @@ def run_text(model: str, prompt: str, cwd: str | os.PathLike,
         # scratch/knowledge carry over between calls. Run in a fresh isolated home (no carryover)
         # and harvest that scratch back into `cwd` after the run so a produced file (criteria.json
         # / a context artifact) lands where the caller looks. stdout is narrative → the clean
-        # answer comes from the transcript. See AGY_DOCS.md §10-11.
+        # answer comes from the transcript. See AGY_DOCS.md-11.
         agy = _agy()
         _agy_log = str(Path(cwd) / ".agy_runtext.log")
         _agy_home = str(Path(cwd) / ".agy_home")
@@ -441,7 +445,7 @@ def run_text(model: str, prompt: str, cwd: str | os.PathLike,
     try:
         proc = subprocess.run(
             # stdin=DEVNULL is `< /dev/null`: without it every claude one-shot pays a 3 s
-            # stall and writes a stderr warning a health check would read as failure (V19).
+            # stall and writes a stderr warning a health check would read as failure.
             cmd, cwd=cwd, env=env, stdin=subprocess.DEVNULL,
             capture_output=True, text=True, timeout=timeout,
         )

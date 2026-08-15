@@ -97,7 +97,7 @@ HYGIENE_SCHEMA_VERSION = "1"
 MAX_PLANT_BYTES = 20_000
 
 #: Auto-loaded memory filenames. AGENTS.md is deliberately absent: it is NOT
-#: auto-loaded, which is exactly why rejected it as the carrier.
+#: auto-loaded, which is exactly why the design rejected it as the carrier.
 MEMORY_FILENAMES = ("CLAUDE.md", "CLAUDE.local.md")
 
 #: Names this harness writes. None of them may ever appear inside workspace/ —

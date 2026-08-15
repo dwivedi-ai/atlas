@@ -5,7 +5,7 @@ test_uptake_lib.py — the analysis layer's own tests, runnable without pytest.
 RESPONSIBILITY
   Prove that the estimators recover what they claim to recover, on data whose
   truth is known by construction. Three of these are named gates in
-  IMPLEMENTATION.md §9 Phase 8 and §8.2's tests/test_wur_lib.py list:
+   the analysis-layer companion to tests/test_wur_lib.py:
   known-lift recovery, censoring, and type-I.
 
   It also covers the exclusion rules that are easy to break silently and
@@ -130,9 +130,11 @@ def test_lift_recovery_survives_heterogeneity():
     return f"gamma=0: mean={out[0.0][0]:.4f} sd={out[0.0][1]:.4f} | gamma=1: mean={out[1.0][0]:.4f} sd={out[1.0][1]:.4f}"
 
 
+
+
 # ── 2. censoring ─────────────────────────────────────────────────────────────
 def test_censoring_dispositions():
-    """All three §4.4 dispositions land where they should, and never_mentioned is
+    """All three dispositions land where they should, and never_mentioned is
     excluded from the dataset rather than censored at 0."""
     rows = [
         # lapsed at probe 3 after i0=1 -> event
@@ -249,6 +251,8 @@ def test_retention_reference_is_not_the_control():
     return f"reference={res.per_arm['delta_reference'].iloc[0]}, J={res.horizon_J}, note states the caveat"
 
 
+
+
 # ── 3. type-I ────────────────────────────────────────────────────────────────
 def test_type_i_primary_is_nominal():
     """The PRIMARY cluster-level paired t holds ~0.05 across the heterogeneity
@@ -263,9 +267,11 @@ def test_type_i_primary_is_nominal():
     return " | ".join(f"gamma={g}: type-I={v[0]:.3f}, coverage={v[1]:.3f}" for g, v in out.items())
 
 
+
+
 def test_secondary_tests_inflate_with_heterogeneity():
     """CMH and the within-task permutation inflate as gamma grows — the measured
-    justification for demoting them (§12)."""
+    justification for demoting them."""
     lo = P.power_at(0.0, p0=0.50, tau=0.5, gamma=0.0, tasks=12, reps=5, nsim=3000,
                     seed=99, secondary=True, perm_draws=300)
     hi = P.power_at(0.0, p0=0.50, tau=0.5, gamma=2.0, tasks=12, reps=5, nsim=3000,
@@ -280,7 +286,7 @@ def test_secondary_tests_inflate_with_heterogeneity():
 
 
 def test_secondary_suppressed_above_gamma_half():
-    """§12's rule is executable: above gamma_hat 0.5 no secondary p-value is emitted."""
+    """'s rule is executable: above gamma_hat 0.5 no secondary p-value is emitted."""
     rng = np.random.default_rng(3)
     tasks = {}
     for i in range(12):
@@ -384,6 +390,8 @@ def test_use_rate_reports_cond_and_uncond():
     assert abs(r["use_rate_cond"] - 0.6) < 1e-12
     assert bool(r["appendix_only"]) is True
     return "use_rate_uncond=0.300 and use_rate_cond=0.600 emitted together, flagged appendix_only"
+
+
 
 
 def test_gamma_hat_zero_when_homogeneous():

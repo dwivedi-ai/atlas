@@ -27,7 +27,7 @@ TOKEN ACCOUNTING (V7 — read this before comparing any number to a historical o
   run-varying factor. `tokens.accounting_version` ("per_line_v1" vs "per_message_v2") is
   stamped on every record so the two generations can never be pooled by accident.
   `turns_total` (distinct assistant message.id) is the honest turn count; `message_count`
-  remains the LINE count and was measured at up to 13.67x turns_total (V17).
+  remains the LINE count and was measured at up to 13.67x turns_total.
 """
 
 from __future__ import annotations
@@ -38,7 +38,6 @@ import sys
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
 
 # NOTE: `yaml` is imported lazily inside main() only. The library path
 # (telemetry.py -> extract.core.extract) must import cleanly on a stock python3,
@@ -169,7 +168,7 @@ def _probe_summary(probe_events: list[dict] | None) -> dict:
       turn_message_ids  [str, ...]  assistant message.ids that ARE probe turns
       tool_use_ids      [str, ...]  tool calls issued inside a probe turn
 
-    The two id lists are what makes `tool_calls_task` (§4.4's difficulty-band metric)
+    The two id lists are what makes `tool_calls_task` (the difficulty-band metric)
     computable: tool_calls_total INCLUDES probe turns, tool_calls_task excludes them.
     Passing None leaves every probe counter null and tool_calls_task == tool_calls_total,
     which is the correct answer for a ladder run and for the no-probe arms.
@@ -199,8 +198,7 @@ def _probe_summary(probe_events: list[dict] | None) -> dict:
             "message_ids": message_ids, "tool_use_ids": tool_use_ids}
 
 
-def extract(
-    events: list,           # list of NormalizedEvent from adapter
+def extract(events: list,           # list of NormalizedEvent from adapter
     run_meta: dict,
     task_def: dict,
     grade: dict,
@@ -221,7 +219,7 @@ def extract(
                      from the terminal `result` event. When present it OVERRIDES the summed
                      totals, and the deduped-minus-result delta is recorded: the two were
                      measured to be exactly equal, so a non-zero delta means the V7 fix
-                     regressed (§10's free correctness gate).
+                     regressed — a free correctness gate.
     """
 
     # ── Pass 1: build flat event log ─────────────────────────────────────────
@@ -266,7 +264,7 @@ def extract(
         if ev.role == "assistant":
             token_curve.append([ev.seq, cumulative_input])
 
-    # ── Pass 2: aggregate tokens — ONCE PER MESSAGE, never once per line (V7) ─
+    # ── Pass 2: aggregate tokens — ONCE PER MESSAGE, never once per line ─
     tok_events = _dedupe_usage(events)
     assistant_events = [e for e in tok_events if e.role == "assistant"]
     deduped_input = sum(e.tokens_in for e in assistant_events)
@@ -301,8 +299,7 @@ def extract(
     wall_clock = ts_delta_seconds(first_ts, last_ts) if first_ts and last_ts else None
 
     # First edit event
-    first_edit_ev = next(
-        (el for el in event_log if el.get("is_edit")), None
+    first_edit_ev = next((el for el in event_log if el.get("is_edit")), None
     )
     first_edit_ts = first_edit_ev["ts"] if first_edit_ev else None
     ttfua = ts_delta_seconds(first_ts, first_edit_ts) if first_ts and first_edit_ts else None
@@ -315,11 +312,13 @@ def extract(
     first_edit_seq = first_edit_ev["seq"] if first_edit_ev else None
     last_edit_seq = edit_events[-1]["seq"] if edit_events else None
 
-    # Phase sums must also be per-message, not per-line (V7) — hence tok_events.
+    # Phase sums must also be per-message, not per-line — hence tok_events.
     orient_events = [e for e in tok_events if first_edit_seq is None or e.seq < first_edit_seq]
     impl_events = [e for e in tok_events if first_edit_seq is not None and
                    first_edit_seq <= e.seq <= (last_edit_seq or first_edit_seq)]
     verif_events = [e for e in tok_events if last_edit_seq is not None and e.seq > last_edit_seq]
+
+
 
     def phase_tokens(evs): return sum(e.tokens_in for e in evs if e.role == "assistant")
 
@@ -339,8 +338,7 @@ def extract(
     # Codex reports all tokens in a single turn.completed event that arrives
     # AFTER edit events, so the sequence-based sum yields 0. Fall back to
     # total_input in that case (single-turn agents consume all context upfront).
-    context_acq = sum(
-        el["tokens_in"] for el in event_log
+    context_acq = sum(el["tokens_in"] for el in event_log
         if (first_edit_ev is None or el["seq"] <= first_edit_ev["seq"])
         and el["tokens_in"] > 0
     )
@@ -373,8 +371,7 @@ def extract(
         and el.get("tool_input_summary")
         and (first_edit_ev is None or el["seq"] <= first_edit_ev["seq"])
     ]
-    files_edited = list(dict.fromkeys(
-        _rel_path(el["tool_input_summary"])
+    files_edited = list(dict.fromkeys(_rel_path(el["tool_input_summary"])
         for el in event_log
         if el.get("is_edit") and el.get("tool_input_summary")
     ))
@@ -392,18 +389,16 @@ def extract(
                    if _is_read(el)
                    and (_rel_path(el.get("tool_input_summary") or "")).startswith(".xo/"))
 
-    agents_md_read = any(
-        "AGENTS.md" in (_rel_path(el.get("tool_input_summary") or ""))
+    agents_md_read = any("AGENTS.md" in (_rel_path(el.get("tool_input_summary") or ""))
         for el in event_log if _is_read(el)
     )
-    project_md_read = any(
-        "PROJECT.md" in (_rel_path(el.get("tool_input_summary") or ""))
+    project_md_read = any("PROJECT.md" in (_rel_path(el.get("tool_input_summary") or ""))
         for el in event_log if _is_read(el)
     )
 
     # ── Pass 6: operations ────────────────────────────────────────────────────
     # turns_total is ASSISTANT-ONLY: user lines carry no message.id, so "distinct message id
-    # count" is not "all messages" (V17). message_count below stays the LINE count, which was
+    # count" is not "all messages". message_count below stays the LINE count, which was
     # measured at up to 13.67x this number — anything that means "turns" must read turns_total.
     assistant_message_ids = [getattr(e, "message_id", "") or "" for e in events
                              if e.role == "assistant"]
@@ -412,9 +407,9 @@ def extract(
         len([e for e in events if e.role == "assistant"]) or None
     )
 
-    # The §10 pacing gate: max tool_use blocks per assistant MESSAGE. Counting per stream
+    # The pacing gate: max tool_use blocks per assistant MESSAGE. Counting per stream
     # line would inherit the V7 bug — one message is split across lines and each line would
-    # look like a 1-tool-call message (V17). Group by message.id first.
+    # look like a 1-tool-call message. Group by message.id first.
     per_message_tool_uses: Counter = Counter()
     for e in events:
         if e.role != "assistant":
@@ -426,7 +421,7 @@ def extract(
     probes = _probe_summary(probe_events)
 
     total_tool_calls = sum(1 for el in event_log if el.get("tool"))
-    # tool_calls_task EXCLUDES probe turns — the difficulty-band metric (§4.4). Without probe
+    # tool_calls_task EXCLUDES probe turns — the difficulty-band metric. Without probe
     # rows there is nothing to exclude, which is the right answer for ladder and no-probe arms.
     if probes["present"] and (probes["message_ids"] or probes["tool_use_ids"]):
         probe_tool_calls = 0
@@ -447,8 +442,7 @@ def extract(
     git_calls = sum(1 for el in event_log if el.get("tool_class") == "git_op")
     web_searches = sum(1 for el in event_log if el.get("tool_class") == "web")
     agent_spawns = sum(1 for el in event_log if el.get("tool_class") == "agent")
-    replanning = sum(
-        1 for el in event_log
+    replanning = sum(1 for el in event_log
         if el.get("is_edit")
         and "PLAN.md" in (el.get("tool_input_summary") or "")
     )
@@ -549,7 +543,7 @@ def extract(
 
 
 def token_accounting_ok(run_record: dict) -> list[str]:
-    """The free correctness check §10 makes a pilot gate. [] means clean.
+    """The free correctness check makes a pilot gate. [] means clean.
 
     Dedupe-by-message.id was measured to equal the terminal `result.usage` totals EXACTLY
     (53,292 == 53,292), so any non-zero delta means the V7 fix regressed. Returns problems
@@ -559,8 +553,7 @@ def token_accounting_ok(run_record: dict) -> list[str]:
     problems = []
     tok = run_record.get("tokens") or {}
     if tok.get("accounting_version") != ACCOUNTING_VERSION:
-        problems.append(
-            f"tokens.accounting_version={tok.get('accounting_version')!r} "
+        problems.append(f"tokens.accounting_version={tok.get('accounting_version')!r} "
             f"(expected {ACCOUNTING_VERSION!r}) — this record must not be pooled with post-V7 rows")
     for k in ("dedupe_delta_input", "dedupe_delta_output"):
         d = tok.get(k)

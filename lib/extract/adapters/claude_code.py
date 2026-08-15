@@ -10,7 +10,7 @@ INPUTS
   raw_lines : list[str]  — the lines of either
                              ~/.claude/projects/<slug>/<session_id>.jsonl   (on disk), or
                              stream.jsonl                                    (verbatim child stdout)
-                           Both split one assistant message across several lines (V17), and both
+                           Both split one assistant message across several lines, and both
                            are handled by the same code path.
 
 OUTPUTS
@@ -18,7 +18,7 @@ OUTPUTS
   terminal_result(raw_lines) -> dict | None  — the authoritative run totals from the terminal
                            `result` event (stream only; the on-disk transcript has none).
 
-THE DEFECT THIS FILE EXISTS TO FIX (V7)
+THE DEFECT THIS FILE EXISTS TO FIX
   Claude Code writes ONE LINE PER CONTENT BLOCK and repeats a BYTE-IDENTICAL `message.usage`
   object on every one of them. `extract/core.py` summed per line, so a message with 6 content
   blocks contributed its 32,356 input tokens six times. Measured over 116 transcripts: input
@@ -33,7 +33,7 @@ THE DEFECT THIS FILE EXISTS TO FIX (V7)
   run-varying factor. `tokens.accounting_version` distinguishes the two generations so
   pre-fix and post-fix records can never be pooled by accident.
 
-STREAM vs TRANSCRIPT — MEASURED HERE, NOT IN SPIKES.md
+STREAM vs TRANSCRIPT — MEASURED HERE, NOT IN 
   The two files are NOT interchangeable for tokens, and the difference is silent.
   `usage` is byte-identical across the lines of one message in BOTH, so dedupe works on
   both. But in stream.jsonl `message.usage.output_tokens` is a STREAMING PLACEHOLDER fixed
@@ -103,7 +103,7 @@ class NormalizedEvent:
     is_sidechain: bool = False       # transcript isSidechain — a subagent turn (impossible under
                                      # --tools Bash,Read,Write,Edit,Glob,Grep, asserted not assumed)
     is_replay: bool = False          # stream `isReplay` — a message the DRIVER injected on stdin
-                                     # and the CLI echoed back. §4.2.2's harness_probe /
+                                     # and the CLI echoed back.'s harness_probe /
                                      # harness_resume channels are `user` + isReplay, asserted
                                      # nonce-free, and never count toward `read`.
     tool_results: list[dict] = field(default_factory=list)
@@ -126,10 +126,10 @@ def _tool_use_result(obj: dict) -> Any:
 
 
 def _harvest_tool_results(obj: dict, content: list[dict]) -> list[dict]:
-    """One entry per tool_result block, carrying the truncation facts §4.2.2 needs.
+    """One entry per tool_result block, carrying the truncation facts needs.
 
     `file.numLines < file.totalLines` is the SOLE Read-truncation signal, and it exists only in
-    the on-disk transcript — stream.jsonl carries no truncation information at all (V16).
+    the on-disk transcript — stream.jsonl carries no truncation information at all.
     `file.truncated` is None on every read, truncated or not, so it is deliberately NOT used as
     a trigger; it is carried verbatim for the record and nothing else.
     """
@@ -169,7 +169,7 @@ def _harvest_tool_results(obj: dict, content: list[dict]) -> list[dict]:
 
 
 def _system_reminders(content: list[dict]) -> list[str]:
-    """<system-reminder> blocks are model-visible but are NOT an exposure channel (§4.2.2 —
+    """<system-reminder> blocks are model-visible but are NOT an exposure channel ( —
     audit only). Surfaced so regions.py can classify them instead of hitting unknown_visible."""
     out = []
     for block in content:
@@ -190,7 +190,7 @@ def normalize(raw_lines: list[str], *, include_aux: bool = False) -> list[Normal
     include_aux=True additionally emits `attachment` / `queued_command` (role `probe_in`,
     the stdin-injected probe channel) and `system` (role `system`, carries system/init).
 
-    Usage is attributed to the first line of each `message.id` and zeroed on the rest (V7).
+    Usage is attributed to the first line of each `message.id` and zeroed on the rest.
     A line with no message.id (every user line, and any pre-V7 fixture) is never deduped.
     """
     events: list[NormalizedEvent] = []

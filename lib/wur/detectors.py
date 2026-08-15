@@ -101,7 +101,7 @@ DEFAULT_EXCLUDE_GLOBS: tuple[str, ...] = (
     "**/.egg-info/**",
 )
 
-# The carriers of: `NOTES.md` at every depth plus the `d0-push` import stub.
+# The carriers: `NOTES.md` at every depth plus the `d0-push` import stub.
 # A content detector that scanned these would fire on the plant itself — that is
 # `available`, not `used`. detect_use.py unions the run's real planted paths on
 # top of this; the constant is the floor so a missing manifest cannot silently

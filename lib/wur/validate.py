@@ -5,7 +5,7 @@ validate.py — schema validation for every derived table, at teardown.
 RESPONSIBILITY
   Refuse to let a malformed row reach the parquet. Every line of events.jsonl,
   exposure.jsonl, probes.jsonl and fact_trace.jsonl is validated against its
-  schema before the run is marked done, and the closed channel enum of is
+  schema before the run is marked done, and the closed channel enum is
   cross-checked against the enum regions.py actually implements — a silent drift
   between the two would defeat the `unknown_visible` tripwire.
 

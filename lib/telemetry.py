@@ -17,7 +17,7 @@ OUTPUTS  <run>/run_record.json  (schema_version 2, validated against
                                  schemas/run_record.schema.json when jsonschema is present)
          <run>/event_log.jsonl (one line per message/tool event, legacy shape)
 
-TOKENS (V7)
+TOKENS
   Totals are deduped by `message.id` in the adapter and again in extract/core.py, then
   OVERRIDDEN by the terminal `result` event where one exists. Deduped-vs-result deltas
   are recorded, not swallowed: they were measured to be exactly zero, so a non-zero delta
@@ -285,7 +285,7 @@ def build(run_dir: Path) -> dict:
     if provider == "google":
         _overlay_gemini_tokens(run_dir, agent_id, run_record)
     # agy stores NO tokens in the transcript — pull them from the conversation SQLite DB
-    # (client-side estimates; no cache field). See AGY_DOCS.md §6.
+    # (client-side estimates; no cache field). See AGY_DOCS.md
     elif provider == "antigravity":
         _overlay_agy_tokens(run_dir, run_record)
 
@@ -316,6 +316,8 @@ def validate(run_dir: Path) -> list[str]:
     return [f"{list(e.path)}: {e.message}" for e in sorted(v.iter_errors(record), key=lambda e: list(e.path))]
 
 
+
+
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--run-dir", required=True)
@@ -329,7 +331,7 @@ def main() -> None:
           f"input={t['total_input']} output={t['total_output']} "
           f"turns={ops.get('turns_total')} acct={t.get('accounting_version')} "
           f"verdict={rec['outcome'].get('verdict')} score={rec['outcome']['score_automated']}")
-    # The free correctness check §10 makes a pilot gate: dedupe-by-message.id was measured
+    # The free correctness check makes a pilot gate: dedupe-by-message.id was measured
     # to equal the terminal result.usage totals EXACTLY, so a delta means the V7 fix broke.
     for problem in token_accounting_ok(rec):
         print(f"TOKEN ACCOUNTING: {problem}", file=sys.stderr)

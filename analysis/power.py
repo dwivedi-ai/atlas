@@ -3,8 +3,8 @@
 power.py — what this design can actually detect, by simulation rather than by assertion.
 
 RESPONSIBILITY
-  Replace the MDD headline with a number. IMPLEMENTATION.md §11 S8 says the
-  minimum detectable difference "is a guess" and that the pre-registration cannot
+  Replace the MDD headline with a number. The design called the minimum
+  detectable difference "a guess" and held that the pre-registration could not
   be frozen without it; this file computes it for the 12 x 12 x 5 design under the
   PRIMARY estimator (the cluster-level paired t on per-task risk differences),
   publishes the realized CI coverage next to it, and measures the type-I error of
@@ -21,7 +21,8 @@ THE DATA-GENERATING PROCESS (and why it is parameterized this way)
   outcomes:    k_ctrl,t ~ Binom(R, expit(a_t)),  k_arm,t ~ Binom(R, expit(a_t + b_t))
 
   gamma is TASK x ARM HETEROGENEITY on the logit scale — the exact quantity
-  uptake_lib.gamma_hat() estimates from data and the exact quantity §12 uses to
+  uptake_lib.gamma_hat() estimates from data and the exact quantity the
+  suppression rule uses to
   decide whether the secondary tests may be reported at all.
 
   m and delta are never quoted directly. m is solved so the MARGINAL control rate
@@ -36,7 +37,7 @@ THE DATA-GENERATING PROCESS (and why it is parameterized this way)
 WHAT IS PRIMARY HERE
   primary      cluster-level paired t on the T per-task risk differences (n = T)
   secondary    CMH across task strata; within-task label permutation
-  Both secondaries are simulated WITHOUT the §12 suppression rule, because the
+  Both secondaries are simulated WITHOUT the suppression rule, because the
   point is to measure the error rate the rule exists to prevent.
 
 INPUTS   none (self-contained), or --pilot-dir <aggregate output dir>
@@ -68,7 +69,7 @@ import uptake_lib as U  # noqa: E402
 
 POWER_VERSION = "wur-power-v1"
 
-#: The design of IMPLEMENTATION.md §7.2: 12 tasks, 12 arms, 5 reps = 720 main runs.
+#: The design: 12 tasks, 12 arms, 5 reps = 720 main runs.
 #: Task is the unit of generalization, so the n that drives every interval is 12.
 DESIGN_TASKS = 12
 DESIGN_REPS = 5
@@ -370,7 +371,7 @@ def calibrate_from_pilot(pilot_dir: str | Path, *, outcome: str = "used",
     p0    the control arm's marginal outcome rate
     tau   SD across tasks of the control log-odds (0.5 continuity correction)
     gamma uptake_lib.gamma_hat — the same DerSimonian-Laird estimator the
-          suppression rule in §12 is stated in, so the power study and the
+          suppression rule is stated in, so the power study and the
           decision rule cannot disagree about what gamma means.
     """
     tables = U.load_tables(pilot_dir)
@@ -555,7 +556,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                    help="between-task baseline SD on the logit scale")
     p.add_argument("--gammas", default="0,0.5,1.0", help="heterogeneity grid for the MDD table")
     p.add_argument("--type-i-gammas", default="0,0.5,1.0,2.0",
-                   help="heterogeneity grid for the type-I table; 2.0 tests §12's quoted figure")
+                   help="heterogeneity grid for the type-I table; 2.0 tests the quoted figure")
     p.add_argument("--p0s", default="0.05,0.20,0.50",
                    help="control rates for both the MDD and the type-I tables")
     p.add_argument("--nsim", type=int, default=4000)

@@ -67,7 +67,7 @@ def _is_path(f: str) -> bool:
 ENVS_ALL = ["E0", "E1", "E2", "E3", "E4", "E5", "E6"]
 ELAB = {"E0": "E0\nbare", "E1": "E1\n+README", "E2": "E2\n+AGENTS", "E3": "E3\n+PROJECT",
         "E4": "E4\nfull-XO", "E5": "E5\n+memory", "E6": "E6\nDOX"}
-# The §7.1 arms, in the order the design reads them: pushed/pointer, the depth ladder,
+# The arms, in the order the design reads them: pushed/pointer, the depth ladder,
 # the format contrasts, discrimination, then the two controls and the no-probe pair.
 WUR_ARMS = ["d0-push", "d1-ptr", "d1", "d2", "d3", "d2-check", "d2-table", "d2-dist",
             "ctrl", "ctrl-nofile", "ctrl-np", "d1-np", "d3-np"]

@@ -272,7 +272,7 @@ def scan_text(text: str, card: FactCard) -> list[Hit]:
 
 
 def assert_scan_before_truncate(regionset: "regions_mod.RegionSet") -> None:
-    """Precondition of: nothing has digested or truncated the regions yet.
+    """Precondition: nothing has digested or truncated the regions yet.
 
     regions.py hands over full region text; events.py replaces it with a digest.
     If a caller ever reorders the chain, this raises instead of silently

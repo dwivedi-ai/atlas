@@ -3,8 +3,8 @@
 uptake_lib.py — every statistic the Workspace Uptake & Retention experiment reports.
 
 RESPONSIBILITY
-  Own the numbers. Each metric of STATUS.md §5 and each estimator of
-  IMPLEMENTATION.md §4 / §12 is exactly one function here, importable and
+  Own the numbers. Each metric and each estimator is exactly one
+  function here, importable and
   unit-testable outside Jupyter, so a result can be reproduced without a kernel.
   analysis/uptake.ipynb holds no logic: every cell is a call into this module.
 
@@ -23,7 +23,7 @@ OUTPUTS
   ClusterResult, RetentionResult, ...), each carrying its own n, CI and method
   string so a figure caption can be written from the object alone.
 
-THE FIVE COMMITMENTS THIS FILE ENCODES (IMPLEMENTATION.md §12)
+THE FIVE COMMITMENTS THIS FILE ENCODES
   1. PRIMARY INFERENCE is the cluster-level paired t on per-task risk
      differences. `paired_cluster_t()`. n is the number of TASKS.
   2. CMH and within-task label permutation are SECONDARY and are SUPPRESSED
@@ -43,7 +43,7 @@ TWO EXCLUSION RULES THAT ARE NOT NEGOTIABLE AT ANALYSIS TIME
   - `read` is boolean-OR-NULL and null means UNKNOWN (a truncation or the 256 KB
     ceiling hit a call targeting the fact file). Unknown is NEVER coerced to
     false: wide searches truncate and deep facts are found by wide searches, so
-    that coercion would make the bias run with the hypothesis (§4.2.2). Unknown
+    that coercion would make the bias run with the hypothesis. Unknown
     rows leave the denominator and are counted in `n_unknown`; the bounding pair
     rate_if_unknown_false / rate_if_unknown_true brackets what they could do.
   - The alarm metrics (confabulation, unexplained possession) are computed on a
@@ -64,7 +64,7 @@ import math
 import warnings
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Mapping, Sequence
 
 import numpy as np
 import pandas as pd
@@ -72,7 +72,7 @@ from scipy import stats
 
 UPTAKE_LIB_VERSION = "wur-uptake-lib-v1"
 
-# ── the design, as data (IMPLEMENTATION.md §7.1) ─────────────────────────────
+# ── the design, as data ─────────────────────────────
 #: arm id -> factors. Used only to LABEL rows whose factor_* columns are null
 #: (a hand-built frame, an old run); a real run carries its own factors.
 ARMS: dict[str, dict[str, Any]] = {
@@ -110,16 +110,16 @@ class AnalysisConfig:
     """
     baseline_condition: str = "ctrl"          # D3 primary control: fact-free NOTES.md at d2
     secondary_control: str = "ctrl-nofile"    # D3 secondary: no NOTES.md at all
-    read_field: str = "read"                  # PRIMARY (D4: inbound U self_thinking)
+    read_field: str = "read"                  # PRIMARY (inbound U self_thinking)
     sensitivity_read_field: str = "read_inbound_only"  # mandatory sensitivity row
     exclude_weak_facts: bool = True           # D2: prior_check_status == "weak" out of primary
     exclude_nonanalyzable: bool = True        # analyzable == false is EXCLUDED, never a miss
     exclude_quarantined: bool = True          # ... except in the alarm metrics
     alpha: float = 0.05
-    gamma_suppress: float = 0.5               # §12: suppress CMH/permutation above this
+    gamma_suppress: float = 0.5               #: suppress CMH/permutation above this
     horizon_at_risk_frac: float = 0.10        # J: >=10% of the arm still at risk
     retention_min_J: int = 3                  # J < 3 probes => descriptive only
-    retention_pre_use_only: bool = True       # §4.4: strictly before first use
+    retention_pre_use_only: bool = True       #: strictly before first use
     retention_reference: str | None = None    # None -> shallowest pulled arm present
     min_tasks: int = 2                        # below this a cluster t has no dof
     bootstrap_draws: int = 2000
@@ -238,7 +238,7 @@ def analysis_frame(source: Tables | pd.DataFrame,
                    cfg: AnalysisConfig = DEFAULT_CONFIG) -> tuple[pd.DataFrame, ExclusionReport]:
     """The primary-analysis frame: analyzable, un-quarantined, weak facts removed.
 
-    Pre-registered (D2): facts firing 1/12 in control are ADMITTED to the suite
+    Pre-registered: facts firing 1/12 in control are ADMITTED to the suite
     and EXCLUDED from primary. The exclusion is decided before treatment data
     exists, which is what removes the forking-paths risk — so it lives in the
     default config, not in a notebook cell.
@@ -329,10 +329,6 @@ def _bool_series(df: pd.DataFrame, col: str) -> pd.Series:
     return df[col].astype("boolean")
 
 
-def _known(df: pd.DataFrame, col: str) -> pd.Series:
-    return _bool_series(df, col).notna()
-
-
 # ── rates ────────────────────────────────────────────────────────────────────
 def rate_by_condition(df: pd.DataFrame, outcome: str,
                       cfg: AnalysisConfig = DEFAULT_CONFIG,
@@ -373,7 +369,7 @@ def rate_by_condition(df: pd.DataFrame, outcome: str,
 
 
 def _trust_of(sub: pd.DataFrame) -> str:
-    """MEASURED vs ASSERTED (STATUS.md §2). d0-push's exposure is asserted by the
+    """MEASURED vs ASSERTED. d0-push's exposure is asserted by the
     autoload canary because auto-loaded content appears in NO log; pooling it with
     measured exposure without saying so is the main way to draw a wrong conclusion."""
     if "exposure_basis" not in sub.columns or not len(sub):
@@ -444,7 +440,7 @@ class ClusterResult:
 def paired_cluster_t(df: pd.DataFrame, arm: str, control: str, outcome: str,
                      cfg: AnalysisConfig = DEFAULT_CONFIG, *,
                      denominator: str | None = None) -> ClusterResult:
-    """THE PRIMARY TEST (§12).
+    """THE PRIMARY TEST.
 
     lambda_{a,t} = mean_k outcome[a,t,k] - mean_k outcome[ctrl,t,k]
     lambda_a     = mean_t lambda_{a,t}
@@ -502,13 +498,14 @@ def cluster_bootstrap_ci(values: Sequence[float], cfg: AnalysisConfig = DEFAULT_
     return (float(np.quantile(boot, cfg.alpha / 2)), float(np.quantile(boot, 1 - cfg.alpha / 2)))
 
 
+
 # ── heterogeneity, and the SECONDARY tests it suppresses ─────────────────────
 def gamma_hat(df: pd.DataFrame, arm: str, control: str, outcome: str) -> Estimate:
     """Task x arm heterogeneity on the logit scale — the quantity that decides
     whether the secondary tests may be reported at all.
 
     DerSimonian-Laird moment estimator of tau over per-task log odds ratios with a
-    0.5 continuity correction. gamma_hat = sqrt(tau^2). §12 suppresses CMH and the
+    0.5 continuity correction. gamma_hat = sqrt(tau^2). suppresses CMH and the
     permutation test above 0.5 because their type-I error was measured to run
     0.094 -> 0.188 as gamma goes 1.0 -> 2.0.
     """
@@ -553,6 +550,8 @@ class SecondaryResult:
         return asdict(self)
 
 
+
+
 def _strata(df: pd.DataFrame, arm: str, control: str, outcome: str) -> list[tuple[int, int, int, int]]:
     """Per-task 2x2 (a=arm events, b=arm non-events, c=ctrl events, d=ctrl non-events)."""
     out = []
@@ -574,7 +573,7 @@ def cmh_test(df: pd.DataFrame, arm: str, control: str, outcome: str,
     It conditions on the stratum margins, so it answers "is there ANY effect in
     ANY task", not "does the average task move" — and under task x arm
     heterogeneity it rejects far more often than nominal. Hence the suppression
-    rule (§12): above gamma_hat 0.5 the p-value is not reported at all, rather
+    rule: above gamma_hat 0.5 the p-value is not reported at all, rather
     than being reported with a caveat nobody reads.
     """
     g = gamma_hat(df, arm, control, outcome)
@@ -583,7 +582,7 @@ def cmh_test(df: pd.DataFrame, arm: str, control: str, outcome: str,
     if suppress and g.value is not None and g.value > cfg.gamma_suppress:
         return SecondaryResult("cmh", None, None, k, True, g.value,
                                reason=f"gamma_hat={g.value:.3f} > {cfg.gamma_suppress}; "
-                                      "CMH is anti-conservative under task x arm heterogeneity (§12)")
+                                      "CMH is anti-conservative under task x arm heterogeneity")
     if k < 1:
         return SecondaryResult("cmh", None, None, 0, False, g.value, reason="no shared strata")
     num = den = 0.0
@@ -625,7 +624,7 @@ def permutation_test_within_task(df: pd.DataFrame, arm: str, control: str, outco
     if suppress and g.value is not None and g.value > cfg.gamma_suppress:
         return SecondaryResult("permutation_within_task", obs.mean_diff, None, k, True, g.value,
                                reason=f"gamma_hat={g.value:.3f} > {cfg.gamma_suppress}; "
-                                      "within-task permutation is anti-conservative here (§12)")
+                                      "within-task permutation is anti-conservative here")
     if obs.mean_diff is None:
         return SecondaryResult("permutation_within_task", None, None, k, False, g.value,
                                reason=obs.note or "no estimate")
@@ -660,10 +659,9 @@ def read_rate_table(source: Tables | pd.DataFrame,
                     cfg: AnalysisConfig = DEFAULT_CONFIG) -> pd.DataFrame:
     """P(nonce entered context) per arm, PRIMARY and sensitivity in one frame.
 
-    definition="read"              PRIMARY (D4: inbound channels U self_thinking)
+    definition="read"              PRIMARY (inbound channels U self_thinking)
     definition="read_inbound_only" the pre-D4 definition — a MANDATORY row in
-                                   every table where read is a denominator
-                                   (§4.2.1), so it is emitted here rather than
+                                   every table where read is a denominator, so it is emitted here rather than
                                    left to a caller to remember.
     """
     df, _ = analysis_frame(source, cfg) if not isinstance(source, pd.DataFrame) else (source, None)
@@ -680,7 +678,7 @@ def incidental_exposure(source: Tables | pd.DataFrame,
     """read - opened, per arm: did the agent FIND the fact, or stumble into it?
 
     Reported two ways because they answer different questions:
-      incidental_rate  = P(read) - P(opened)            (STATUS.md §5's definition)
+      incidental_rate  = P(read) - P(opened)            (the definition)
       incidental_share = P(not opened | read)           (of the runs that saw it,
                                                          how many never opened it)
     """
@@ -712,7 +710,7 @@ def mention_rate(source: Tables | pd.DataFrame,
                  cfg: AnalysisConfig = DEFAULT_CONFIG) -> pd.DataFrame:
     """P(named in >= 1 probe | exposed), per arm — with the unconditional rate beside it.
 
-    The conditional form is the one STATUS.md §5 defines and the one that answers
+    The conditional form is the defined one, and the one that answers
     "does the agent hold it in reportable state"; the unconditional form is what a
     reader will otherwise compute wrongly from the funnel.
     """
@@ -731,10 +729,10 @@ def mention_rate(source: Tables | pd.DataFrame,
 # ── metric 3: use (lift over the paired control) ─────────────────────────────
 def use_rate_table(source: Tables | pd.DataFrame,
                    cfg: AnalysisConfig = DEFAULT_CONFIG) -> pd.DataFrame:
-    """APPENDIX ONLY (§12): the raw use rate per arm.
+    """APPENDIX ONLY: the raw use rate per arm.
 
     use_rate_uncond = fired / N and use_rate_cond = fired / eligible are emitted
-    in one frame because §4.3 requires them to be reported together — `eligible`
+    in one frame because requires them to be reported together — `eligible`
     is not decoration, and a run that never created the site the mandate applies
     to is CENSORED, not evidence of non-use.
     """
@@ -759,10 +757,10 @@ def use_lift(source: Tables | pd.DataFrame, cfg: AnalysisConfig = DEFAULT_CONFIG
              arms: Sequence[str] | None = None, control: str | None = None,
              outcome: str = "used",
              conditional: bool = False) -> pd.DataFrame:
-    """THE REPORTED USE QUANTITY (§4.3, §12): lift over the paired control.
+    """THE REPORTED USE QUANTITY: lift over the paired control.
 
     One row per arm: lambda_a with its cluster-level paired t, its bootstrap
-    interval over tasks, and — because §4.3 demands they travel together — the
+    interval over tasks, and — because demands they travel together — the
     conditional version is available by passing conditional=True (denominator
     `eligible`). n is n_tasks, and it says so in the frame.
     """
@@ -804,7 +802,7 @@ class RetentionResult:
 
 def retention_dataset(source: Tables | pd.DataFrame,
                       cfg: AnalysisConfig = DEFAULT_CONFIG) -> pd.DataFrame:
-    """The survival dataset, in PROBE INDEX units, never wall clock (§4.4).
+    """The survival dataset, in PROBE INDEX units, never wall clock.
 
     Defined on {ever_mention = 1} only; a fact never mentioned is EXCLUDED and
     fully accounted for by the mention rate. Three censoring dispositions:
@@ -872,7 +870,7 @@ def _scalar_int(v: Any) -> int | None:
 def common_horizon(dataset: pd.DataFrame, cfg: AnalysisConfig = DEFAULT_CONFIG,
                    *, arms: Sequence[str] | None = None) -> tuple[float | None, pd.DataFrame]:
     """J = min over arms of the largest time at which >= 10% of that arm's retention
-    subset is still at risk (§4.4). Returns (J, per-arm detail)."""
+    subset is still at risk. Returns (J, per-arm detail)."""
     if not len(dataset):
         return None, pd.DataFrame(columns=["condition_id", "n", "J_arm"])
     use = dataset if arms is None else dataset[dataset["condition_id"].isin(list(arms))]
@@ -922,7 +920,7 @@ def rmst_by_condition(dataset: pd.DataFrame, horizon: float,
     """RMST_a(J) = integral_0^J S_a(u) du, per arm, via lifelines' KM fit.
 
     NOT the median. The KM median is undefined whenever S(j) > 0.5 across the
-    observed support, which is the expected case here (§4.4) — asking for it is
+    observed support, which is the expected case here — asking for it is
     how a retention table ends up full of NaN and gets quietly dropped.
 
     THE INTERVAL IS A CLUSTER BOOTSTRAP OVER TASKS, NOT lifelines' variance.
@@ -1025,7 +1023,7 @@ def retention_table(source: Tables | pd.DataFrame,
                     arms: Sequence[str] | None = None) -> RetentionResult:
     """The retention headline: J, RMST per arm, and Delta-RMST vs the control.
 
-    Honest naming (§4.4): this is SUSTAINED SELF-REPORT UNDER REPEATED
+    Honest naming: this is SUSTAINED SELF-REPORT UNDER REPEATED
     ELICITATION, not memory decay — the probe re-injects the nonce roughly every
     two tool calls, and `n_reinjections` is carried as the dose covariate.
     """
@@ -1062,7 +1060,7 @@ def retention_table(source: Tables | pd.DataFrame,
     exploratory = J < cfg.retention_min_J
     if exploratory:
         notes.insert(0, "J < %d probes: retention is DESCRIPTIVE ONLY (KM curves); "
-                        "Delta-RMST drops to exploratory (§4.4)" % cfg.retention_min_J)
+                        "Delta-RMST drops to exploratory" % cfg.retention_min_J)
     return RetentionResult(J, per_arm, ds, exploratory, note=" | ".join(notes))
 
 
@@ -1085,6 +1083,8 @@ def retention_reference_arm(dataset: pd.DataFrame,
     return sorted(present)[0] if present else None
 
 
+
+
 def km_curves(dataset: pd.DataFrame, *, arms: Sequence[str] | None = None) -> dict[str, pd.DataFrame]:
     """Kaplan-Meier survival curves per arm, for plotting and for the descriptive
     fallback when J < 3."""
@@ -1104,7 +1104,7 @@ def km_curves(dataset: pd.DataFrame, *, arms: Sequence[str] | None = None) -> di
 
 def post_discharge_persistence(source: Tables | pd.DataFrame,
                                cfg: AnalysisConfig = DEFAULT_CONFIG) -> pd.DataFrame:
-    """The complement of the primary retention window, reported separately (§4.4).
+    """The complement of the primary retention window, reported separately.
 
     Rows whose lapse happened at or after first use — where dropping the fact is
     correct behaviour rather than forgetting.
@@ -1191,8 +1191,8 @@ def probe_quality(source: Tables, cfg: AnalysisConfig = DEFAULT_CONFIG) -> pd.Da
 
 
 def slot_class_distribution(source: Tables) -> pd.DataFrame:
-    """The filler distribution IS a finding (STATUS.md §4.3): with one fact per task
-    (D1) at least two slots are filler by construction, so what fills them is data."""
+    """The filler distribution IS a finding: with one fact per task at least two
+    slots are filler by construction, so what fills them is data."""
     probes = source.probes if isinstance(source, Tables) else source
     cols = [f"n_{c}_slots" for c in ("critical_fact", "task_restatement", "generic_workspace",
                                      "filler", "empty", "distrusted")]
@@ -1252,7 +1252,7 @@ def unexplained_possession_rate(source: Tables | pd.DataFrame,
 
     Folding thinking into `read` mutes confabulation detection; this restores it.
     Any true row is quarantined and hand-audited, and a pilot rate above 0.05 is a
-    FIXTURE-WIDE FAILURE, not a data point (§4.2.1).
+    FIXTURE-WIDE FAILURE, not a data point.
     """
     df = alarm_frame(source, cfg)
     vals = _bool_series(df, "unexplained_possession")
@@ -1266,11 +1266,12 @@ def unexplained_possession_rate(source: Tables | pd.DataFrame,
                             "run_ids": [str(x) for x in flagged.get("run_id", pd.Series(dtype=str)).tolist()]})
 
 
+
 def orthogonality_phi(source: Tables | pd.DataFrame,
                       cfg: AnalysisConfig = DEFAULT_CONFIG) -> pd.DataFrame:
     """phi(used, success) per task. |phi| > 0.8 means the fact is not orthogonal to
     acceptance — the battery is testing the mandate, success == used, and the funnel
-    collapses to one measurement (§4.3). Same disposition as a failed prior-check:
+    collapses to one measurement. Same disposition as a failed prior-check:
     discard the fact.
     """
     df, _ = analysis_frame(source, cfg) if not isinstance(source, pd.DataFrame) else (source, None)
@@ -1295,7 +1296,7 @@ def _fit_glmm_logistic(frame: pd.DataFrame, outcome: str, fixed: str,
     """SECONDARY model fit: logistic with a random intercept for task.
 
     Tries statsmodels' BinomialBayesMixedGLM (the literal "mixed-effects logistic,
-    random intercept for task" of STATUS.md §5) and falls back to GEE with an
+    random intercept for task") and falls back to GEE with an
     exchangeable working correlation clustered on task, which estimates the same
     marginal slope with a cluster-robust SE. Whichever ran is reported in
     `method`; the primary claim never depends on either.
@@ -1348,7 +1349,7 @@ def depth_sensitivity(source: Tables | pd.DataFrame, cfg: AnalysisConfig = DEFAU
 
     PRIMARY is cluster-level: one slope per task over the pulled ladder d1->d2->d3,
     then a one-sample t across tasks. Pairwise paired contrasts are reported
-    beside it. The mixed-effects logistic of STATUS.md §5 is fitted too, and is
+    beside it. The mixed-effects logistic is fitted too, and is
     SECONDARY — with T = 12 it is a 12-cluster GLMM and its asymptotics are a
     promise, not a fact.
     """
@@ -1587,6 +1588,8 @@ def plot_funnel(source: Tables | pd.DataFrame, cfg: AnalysisConfig = DEFAULT_CON
     return fig
 
 
+
+
 def plot_read_rate(source: Tables | pd.DataFrame, cfg: AnalysisConfig = DEFAULT_CONFIG, *, ax=None):
     """Read rate with Wilson CIs, PRIMARY and the mandatory inbound-only sensitivity."""
     t = read_rate_table(source, cfg)
@@ -1608,6 +1611,8 @@ def plot_read_rate(source: Tables | pd.DataFrame, cfg: AnalysisConfig = DEFAULT_
     ax.legend(fontsize=8)
     fig.tight_layout()
     return fig
+
+
 
 
 def plot_lift(lift_frame: pd.DataFrame, *, title: str = "Use lift over paired control", ax=None):

@@ -24,13 +24,12 @@ from __future__ import annotations
 import json
 import re
 import shlex
-from dataclasses import dataclass, field
-from typing import Any
 
 from .claude_code import NormalizedEvent
 
 
 # ── Shell command classifiers ────────────────────────────────────────────────
+
 
 NAV_COMMANDS = {"cat", "head", "tail", "less", "more", "bat", "view", "open", "sed", "awk", "wc"}
 SEARCH_COMMANDS = {"grep", "rg", "ag", "ack", "find", "fd", "fzf"}
@@ -177,8 +176,7 @@ def normalize(raw_lines: list[str]) -> list[NormalizedEvent]:
 
         if ev_type == "thread.started":
             # Session start — emit a synthetic user message
-            events.append(NormalizedEvent(
-                seq=seq, ts="", role="user",
+            events.append(NormalizedEvent(seq=seq, ts="", role="user",
                 tokens_in=0, tokens_out=0, cache_read=0, cache_write=0,
                 tools=[], raw_content=[{"type": "text", "text": "__session_start__"}],
                 message_uuid=raw.get("thread_id", ""),
@@ -196,8 +194,7 @@ def normalize(raw_lines: list[str]) -> list[NormalizedEvent]:
             if events:
                 last = events[-1]
                 # Create a new event carrying the token totals for this turn
-                events.append(NormalizedEvent(
-                    seq=seq, ts="", role="assistant",
+                events.append(NormalizedEvent(seq=seq, ts="", role="assistant",
                     tokens_in=usage.get("input_tokens", 0),
                     tokens_out=usage.get("output_tokens", 0),
                     cache_read=usage.get("cached_input_tokens", 0),
@@ -205,7 +202,7 @@ def normalize(raw_lines: list[str]) -> list[NormalizedEvent]:
                     tools=[],
                     raw_content=[{"type": "usage", "data": usage}],
                     message_uuid=f"turn_{turn_seq}",
-                ))
+            ))
                 seq += 1
                 turn_seq += 1
             continue
@@ -235,24 +232,22 @@ def normalize(raw_lines: list[str]) -> list[NormalizedEvent]:
                     "tool_use_id": item.get("id", ""),
                     "exit_code": exit_code,
                 }
-                events.append(NormalizedEvent(
-                    seq=seq, ts="", role="assistant",
+                events.append(NormalizedEvent(seq=seq, ts="", role="assistant",
                     tokens_in=0, tokens_out=0, cache_read=0, cache_write=0,
                     tools=[tool_entry],
                     raw_content=[{"type": "command_output", "output": output[:500]}],
                     message_uuid=item.get("id", ""),
-                ))
+            ))
                 seq += 1
 
             elif item_type == "agent_message":
                 text = item.get("text", "")
-                events.append(NormalizedEvent(
-                    seq=seq, ts="", role="assistant",
+                events.append(NormalizedEvent(seq=seq, ts="", role="assistant",
                     tokens_in=0, tokens_out=0, cache_read=0, cache_write=0,
                     tools=[],
                     raw_content=[{"type": "text", "text": text}],
                     message_uuid=item.get("id", ""),
-                ))
+            ))
                 seq += 1
 
             elif item_type == "file_change":
@@ -267,13 +262,12 @@ def normalize(raw_lines: list[str]) -> list[NormalizedEvent]:
                         "cmd_class": "edit",
                         "read_files": [],
                     }
-                    events.append(NormalizedEvent(
-                        seq=seq, ts="", role="assistant",
+                    events.append(NormalizedEvent(seq=seq, ts="", role="assistant",
                         tokens_in=0, tokens_out=0, cache_read=0, cache_write=0,
                         tools=[tool_entry],
                         raw_content=[{"type": "file_change", "path": path}],
                         message_uuid=item.get("id", ""),
-                    ))
+            ))
                     seq += 1
 
             # Skip warning/error items (e.g. bypass-hook-trust notice)

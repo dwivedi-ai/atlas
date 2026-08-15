@@ -4,7 +4,7 @@ Adapter: agy (Antigravity CLI) transcript_full.jsonl -> normalized event stream.
 teardown_run.sh copies the located `transcript_full.jsonl` to <run>/transcript.jsonl and the
 conversation `.db` to <run>/agy_conversation.db. This adapter builds the event stream from the
 JSONL; TOKENS come from the DB (agy stores none in the transcript) and are overlaid by
-telemetry.py via lib/agy.extract_tokens. See AGY_DOCS.md §5,§6,§7.
+telemetry.py via lib/agy.extract_tokens. See AGY_DOCS.md,,
 
 Event model: a linear step stream. Tool INTENTS live in `PLANNER_RESPONSE.tool_calls[]={name,args}`
 (one model turn); outcome events (RUN_COMMAND/VIEW_FILE/CODE_ACTION/…) are their results and are

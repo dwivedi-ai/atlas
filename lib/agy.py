@@ -79,6 +79,7 @@ def transcript_path(conv_id: str, gemini_dir: str | None = None) -> Path:
     return appdata_dir(gemini_dir) / "brain" / conv_id / ".system_generated" / "logs" / "transcript_full.jsonl"
 
 
+
 def db_path(conv_id: str, gemini_dir: str | None = None) -> Path:
     return appdata_dir(gemini_dir) / "conversations" / f"{conv_id}.db"
 
@@ -136,6 +137,7 @@ def _var(d, fn):  return next((v for f, wt, v in d if f == fn and wt == 0), None
 def _str(d, fn):  return next((v.decode("utf-8", "replace") for f, wt, v in d if f == fn and wt == 2), None)
 
 
+
 def snapshot(src: str | os.PathLike, dst: str | os.PathLike) -> bool:
     """Checkpoint the WAL into the main DB, then back up a clean single-file snapshot.
     A plain `cp` of a live WAL-mode SQLite DB loses rows still in the -wal (agy writes
@@ -156,7 +158,7 @@ def snapshot(src: str | os.PathLike, dst: str | os.PathLike) -> bool:
 
 def extract_tokens(db_file: str | os.PathLike) -> dict:
     """Per-call token usage from gen_metadata (client-side ESTIMATES; no cache field).
-    input = f1.f9.f10.f1, output = f1.f4.f3, model = f1.f21. See AGY_DOCS.md §6."""
+    input = f1.f9.f10.f1, output = f1.f4.f3, model = f1.f21. See AGY_DOCS.md"""
     try:
         con = sqlite3.connect(f"file:{db_file}?mode=ro", uri=True)
     except Exception:

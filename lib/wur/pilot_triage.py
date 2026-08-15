@@ -494,7 +494,7 @@ def gate_join_coverage(runs: Sequence[dict]) -> Gate:
     return g
 
 
-#: Evaluation order ='s table order. Every gate is blocking; says so.
+#: Evaluation order = the table order below. Every gate is blocking.
 GATES: tuple[Callable[[Sequence[dict]], Gate], ...] = (
     gate_confab,
     gate_unexplained_possession,
