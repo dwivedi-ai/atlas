@@ -1,7 +1,7 @@
 # Pre-registration — Workspace Uptake & Retention (WUR) v1
 
 **Status:** DRAFT until git-tagged. This document is frozen and tagged
-`wur-prereg-v1` **before the main run produces its first byte** (IMPLEMENTATION.md §12).
+`wur-prereg-v1` **before the main run produces its first byte**.
 Every hypothesis, every primary/secondary split, every decision rule and every
 exclusion below is fixed at that tag. Anything decided afterwards is a
 **deviation** and is reported as one, in a section of the report titled
@@ -28,7 +28,7 @@ Not whether the workspace **contains** useful information, but whether the agent
 available ──► read ──► used ──► retained
 ```
 
-Each boundary is an executable predicate over named artifacts (IMPLEMENTATION.md §4).
+Each boundary is an executable predicate over named artifacts.
 No boundary is defined in prose alone, and each one is computed by exactly one
 function in `uptake_lib.py`.
 
@@ -104,11 +104,11 @@ anti-conservative under task × arm heterogeneity — measured here at p₀ = 0.
 | 1.0 | 0.056 | 0.075 | 0.105 | 0.075 |
 | 2.0 | 0.053 | 0.135 | 0.180 | 0.139 |
 
-IMPLEMENTATION.md §12 quotes 0.094 → 0.188 as γ goes 1.0 → 2.0. That reproduces
+the design quotes 0.094 → 0.188 as γ goes 1.0 → 2.0. That reproduces
 here as **0.105 → 0.180** for the uncorrected CMH at p₀ = 0.50; the
 continuity-corrected version runs lower (0.075 → 0.135) and the effect vanishes
 into discreteness at p₀ = 0.05 with 5 reps, where every test is conservative.
-The direction and the order of magnitude of §12's claim stand; the exact figures
+The direction and the order of magnitude of the claim stand; the exact figures
 depend on the base rate and on the continuity correction, and are restated above
 rather than repeated.
 
@@ -121,7 +121,7 @@ rather than repeated.
 ### 2.4 Secondary metrics
 
 Incidental-exposure rate (`read − opened`), `use_rate_cond` (fired/eligible),
-probe fidelity, slot-class distribution, `read_inbound_only` (see §4.2),
+probe fidelity, slot-class distribution, `read_inbound_only` (see),
 post-discharge persistence, depth/format mixed-effects logistic fits, and the
 appendix raw use rates. Mention tier (c) (LLM adjudication) is a pre-registered
 sensitivity; it becomes primary **only** if κ((a)∨(b), (c)) < 0.6 — decided by κ,
@@ -197,7 +197,7 @@ exactly the failure it exists to catch.
 ### 4.2 `read` is three-valued, and unknown is not false
 
 `read` ∈ {true, false, **null = unknown**}. Null means a truncation or the hard
-256 KB `Read` ceiling hit a call targeting the fact file (V16).
+256 KB `Read` ceiling hit a call targeting the fact file.
 
 > **Unknown reads leave the denominator. They are NEVER coerced to false.**
 
@@ -285,7 +285,7 @@ fails the job.
 
 ### 5.1 Gate: may the main run start?
 
-The pilot's 13 §10 gates are evaluated by `python3 lib/wur/pilot_triage.py
+The pilot's 13 gates are evaluated by `python3 lib/wur/pilot_triage.py
 --job-dir jobs/<pilot> --markdown`. **Any failure blocks the main run.** A gate
 whose input is missing reports `unevaluable` and does not block by itself;
 `--require-all` makes it block, and the main run is launched with `--require-all`.
@@ -337,7 +337,7 @@ n_tasks, and the exclusion counts. A hypothesis is:
   observed γ̂ — the study could not have seen the effect it was looking for, and
   that is reported as a limit of the design, not as evidence of absence;
 - **unresolved** if the primary and the `read_inbound_only` sensitivity disagree
-  in sign (§4.3).
+  in sign.
 
 ### 5.3 Stopping and re-running
 
@@ -355,7 +355,7 @@ own `run_order_index`.
 - Nothing about "agents" in general. Claude Code 2.1.222 / Sonnet 5, under a
   pacing constraint, on a synthetic fixture, on one date. **n = 12 tasks.**
 - That the probe is passive. It is an intervention; H8 bounds it.
-- A memory "half-life" in any cognitive sense. §4.4 measures **sustained
+- A memory "half-life" in any cognitive sense. measures **sustained
   self-report under repeated elicitation**, and the report uses that phrase.
 - Cross-backend token comparisons. Only Claude is full-fidelity here.
 - Anything about Tier B. v1 is the synthetic fixture only; `tier` is on every row
