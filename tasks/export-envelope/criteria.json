@@ -1,0 +1,69 @@
+{
+  "_comment": [
+    "FROZEN, HAND-AUTHORED battery — see tasks/cashflow-report/criteria.json for the rules",
+    "every criterion here follows and why each one exists.",
+    "",
+    "This task differs from the other three: its work order says the tests pinning the",
+    "current bare-array shape 'must be updated with it', NOT that new tests must be added.",
+    "So C2 guards the count at >= 156 and there is deliberately no 'more than before'",
+    "criterion. The reference solutions happen to add one test; that is not required."
+  ],
+  "criteria": [
+    {
+      "id": "C1",
+      "description": "The full test suite passes with no failures and no errors, including the tests that pinned the old bare-array shape.",
+      "kind": "mechanical",
+      "command": "python3 -m pytest",
+      "pass_condition": "exit_code == 0",
+      "expect_on_base": "pass"
+    },
+    {
+      "id": "C2",
+      "description": "No pre-existing test was removed rather than updated: at least 156 tests are still collected.",
+      "kind": "mechanical",
+      "command": "python3 -m pytest --collect-only",
+      "pass_condition": "exit_code == 0 and len([l for l in stdout.splitlines() if '::' in l]) >= 156",
+      "expect_on_base": "pass"
+    },
+    {
+      "id": "C3",
+      "description": "The JSON export is a single object — not an array — carrying exactly the keys schema, generated_at, source_system and transactions.",
+      "kind": "mechanical",
+      "command": "python3 -m ledgerline.cli export tests/data/sample.ledger --format json",
+      "pass_condition": "exit_code == 0 and isinstance(json.loads(stdout), dict) and set(['schema', 'generated_at', 'source_system', 'transactions']) <= set(json.loads(stdout).keys())",
+      "expect_on_base": "fail"
+    },
+    {
+      "id": "C4",
+      "description": "transactions is the unchanged payload: a list of 22 objects whose first has date 2024-10-01 and ref OB-USD.",
+      "kind": "mechanical",
+      "command": "python3 -m ledgerline.cli export tests/data/sample.ledger --format json",
+      "pass_condition": "exit_code == 0 and isinstance(json.loads(stdout), dict) and len(json.loads(stdout)['transactions']) == 22 and json.loads(stdout)['transactions'][0]['date'] == '2024-10-01' and json.loads(stdout)['transactions'][0]['ref'] == 'OB-USD'",
+      "expect_on_base": "fail"
+    },
+    {
+      "id": "C5",
+      "description": "source_system is a non-empty string. Its VALUE is deliberately not checked.",
+      "kind": "mechanical",
+      "command": "python3 -m ledgerline.cli export tests/data/sample.ledger --format json",
+      "pass_condition": "exit_code == 0 and isinstance(json.loads(stdout), dict) and isinstance(json.loads(stdout)['source_system'], str) and len(json.loads(stdout)['source_system'].strip()) > 0",
+      "expect_on_base": "fail"
+    },
+    {
+      "id": "C6",
+      "description": "generated_at is an ISO-8601 timestamp. Matched with a regex rather than parsed, because the battery sandbox has no datetime module.",
+      "kind": "mechanical",
+      "command": "python3 -m ledgerline.cli export tests/data/sample.ledger --format json",
+      "pass_condition": "exit_code == 0 and isinstance(json.loads(stdout), dict) and re.match(r'^\\d{4}-\\d{2}-\\d{2}[T ]\\d{2}:\\d{2}:\\d{2}', str(json.loads(stdout)['generated_at'])) is not None",
+      "expect_on_base": "fail"
+    },
+    {
+      "id": "C7",
+      "description": "The CSV export is unaffected: its first line is still the original header.",
+      "kind": "mechanical",
+      "command": "python3 -m ledgerline.cli export tests/data/sample.ledger --format csv",
+      "pass_condition": "exit_code == 0 and stdout.splitlines()[0].strip() == 'date,ref,description,tags,account,amount,currency'",
+      "expect_on_base": "pass"
+    }
+  ]
+}

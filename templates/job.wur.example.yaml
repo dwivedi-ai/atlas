@@ -35,7 +35,7 @@ agent:
   effort: null
 
 # ── the arms ─────────────────────────────────────────────────────────────────
-# The full 12-arm matrix of IMPLEMENTATION.md §7.1. Filename is NOTES.md at every
+# The full 12-arm matrix. Filename is NOTES.md at every
 # depth so filename salience is never confounded with depth.
 #
 #   d0-push  CLAUDE.md=@NOTES.md   pushed channel; read-rate 1.0 BY CONSTRUCTION
@@ -121,7 +121,7 @@ parallelism:
   jobs: 4              # verified clean at 4 with per-run CLAUDE_CONFIG_DIR +
                        # --settings; 6 is the untested ceiling
 
-# NOTE: IMPLEMENTATION.md §8.1 lists a `grade:` spec key, but nothing reads one —
+# NOTE: an earlier draft listed a `grade:` spec key, but nothing reads one —
 # teardown_run.sh grades whenever grader/<task_id>/ exists, so grading is
 # controlled by whether judge.py --synthesize has run, not by a flag. The key is
 # deliberately absent here rather than declared-and-ignored.

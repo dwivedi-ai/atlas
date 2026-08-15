@@ -23,7 +23,7 @@ index db6cb43..26e115c 100644
 +    return {
 +        "schema": ENVELOPE_SCHEMA,
 +        "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-+        "source_system": "ZQ-7KDM4TQ2",
++        "source_system": "{nonce}",
 +        "transactions": to_jsonable(ledger),
 +    }
 +

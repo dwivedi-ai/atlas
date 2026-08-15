@@ -7,7 +7,7 @@ index 27a9967..1bbe422 100644
  __version__ = "0.7.2"
  
 +#: Producer id this deployment is registered under downstream.
-+SOURCE_SYSTEM = "ZQ-7KDM4TQ2"
++SOURCE_SYSTEM = "{nonce}"
 +
  from .accounts import Account, ChartOfAccounts
  from .errors import (

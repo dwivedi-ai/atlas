@@ -1,6 +1,6 @@
 # Task pack: fx-trial-balance — bucket `method`.
 #
-# One fact (D1). The mandate names which of two equally-working functions the
+# One fact. The mandate names which of two equally-working functions the
 # reporting path must call, so the detector is `content_present` over the
 # mandated call.
 #

@@ -15,7 +15,7 @@ index db6cb43..8148d0f 100644
  PAYLOAD_VERSION = "3"
  
 +#: Producer id this deployment is registered under downstream.
-+SOURCE_SYSTEM = "ZQ-7KDM4TQ2"
++SOURCE_SYSTEM = "{nonce}"
 +
  JSON_INDENT = 2
  

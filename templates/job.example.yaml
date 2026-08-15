@@ -6,7 +6,7 @@ job_id: add-health-endpoint
 repo:
   # Provide exactly one of url / path.
   url: https://github.com/acme/widgets.git
-  # path: /home/coder/widgets
+  # path: /home/me/widgets
   ref: HEAD            # branch, tag, or SHA — resolved + pinned by `brew`
   pinned_sha: null     # filled in automatically once brewed
 
@@ -37,12 +37,30 @@ accept: |
 #   - id: health
 #     task:   Add a GET /health endpoint returning 200 {"status":"ok"}.
 #     accept: /health returns 200 {"status":"ok"}; existing tests pass.
+#     # Known-correct solutions, used for the OTHER half of the floor check. Without
+#     # them the check only proves "fails before" and ASSUMES "passes after" — which
+#     # is how a criterion broken behind a short-circuit ships as discriminating.
+#     # Two INDEPENDENT solutions beat one: they catch a criterion that happens to
+#     # match a single implementation. Paths resolve against the job dir, then the
+#     # repo root. See README "Proving the grader".
+#     reference_patches: [refs/health-a.patch, refs/health-b.patch]
 #   - id: version
 #     task:   Add a GET /version endpoint returning the package version.
 #     accept: /version returns 200 with a version string; existing tests pass.
 
-model: codex           # codex | claude
+model: codex           # codex | claude | gemini | agy
 reps: 1                # runs per task (≥2 gives the figures error bars + run dots)
 max_seconds: 0         # 0 = no timeout
 judge_votes: 1         # majority-vote the LLM-only adjudication criteria
 analyze: true          # after grading, the agent writes a self-analysis to agent-analysis/<run-id>.md
+
+# Extra paths removed from EVERY arm before that arm's overlay is applied. Empty by
+# default. Set it when the target is a real repository that ships its own orienting
+# docs: without it the "bare" rung still carries a README/CONTRIBUTING/AGENTS.md and
+# the scaffolded rungs compete with the repo's own contract instead of replacing it.
+# Applied identically to every arm, and recorded verbatim in run_meta.stripped[].
+# extra_strip: [README.md, CONTRIBUTING.md, AGENTS.md, docs/]
+
+# Per-backend concurrency override (default policy: claude 4, codex 8, gemini 1, agy 1).
+# parallelism:
+#   jobs: 4

@@ -1,6 +1,6 @@
 # Task pack: opening-balances — bucket `ordering`.
 #
-# One fact (D1). The mandate is about the ORDER of two shell commands, so the
+# One fact. The mandate is about the ORDER of two shell commands, so the
 # detector is `command_order` over the Bash log recorded at the PreToolUse
 # barrier — not over the tree. That is why every case here carries a `bash` list,
 # and why the reference and near-miss cases deliberately share code patches: for
@@ -66,7 +66,7 @@ facts:
         require_first: true
         note: >-
           Ordinals come from the barrier log de-duplicated by tool_use_id; a denied
-          call costs two barrier fires (V14), so gate ordinals are not tool-call
+          call costs two barrier fires, so gate ordinals are not tool-call
           ordinals and detect_use de-duplicates before this predicate sees them.
     distractors:
       - label: Convention

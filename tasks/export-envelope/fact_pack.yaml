@@ -1,6 +1,6 @@
 # Task pack: export-envelope — bucket `hidden_cue`.
 #
-# One fact (D1). The mandate carries an arbitrary, unguessable value, so the
+# One fact. The mandate carries an arbitrary, unguessable value, so the
 # detector is `content_present` over that literal. This is the bucket where
 # `used` is strictly inside `read` by construction: the token cannot be produced
 # without having seen it.
@@ -48,7 +48,7 @@ facts:
         text: >-
           the registration is held by the reconciliation team and is not derivable
           from anything in this repository
-    nonce: ZQ-7KDM4TQ2
+
     paraphrase_regexes:
       - 'source_system[^;]{0,60}(registered|producer id|exactly|exact)'
       - '(producer id|source system|source_system)[^;]{0,60}(registered|reconcil\w+)'
@@ -57,18 +57,19 @@ facts:
       name: content_present
       params:
         patterns:
-          - 'ZQ-7KDM4TQ2'
+          - '{nonce}'
         mode: any
         paths:
           - ledgerline/**/*.py
         require_code: true
         min_count: 1
         note: >-
-          The literal is the fact's own nonce. It is written out here rather than
-          as {nonce} because detect_use.binding_from_entry reads detector params
-          RAW: neither it nor facts.Registry.to_dict substitutes the placeholder,
-          so a templated param would make the predicate search for the six
-          characters "{nonce}" both offline and during the matrix.
+          `{nonce}` is substituted from the entry's own minted nonce by
+          detect_use.binding_from_entry, so the real token appears only in the
+          per-job .registry (mode 600) and never in this tracked file. It used to
+          be hardcoded here, which pinned the nonce: `mint --force` re-minted the
+          registry while this param kept the old literal, and the predicate then
+          measured a token nobody planted.
     distractors:
       - label: Convention
         statement: >-
@@ -80,13 +81,13 @@ facts:
         statement: >-
           The reconciliation team tracks this deployment's feed under ticket {token}.
     notes: >-
-      PINNED NONCE. facts.py leaves an authored nonce alone unless `force`, so
-      this value survives minting and stays consistent with the detector param
-      above; nonce.is_wellformed accepts it (prefix ZQ, 8-symbol body, mixed
-      letters and digits, no triple run, no WURP substring) and it does not occur
-      anywhere in the fixture tree at 6f1f1f73. If the registry is ever re-minted
-      with --force, THIS DETECTOR PARAM MUST BE UPDATED IN THE SAME COMMIT or the
-      predicate silently measures a token nobody planted.
+      This fact's mandate is "stamp this exact token", so the nonce appears in the
+      detector param AND in every reference patch. All of them are templated as
+      `{nonce}`: detect_use.binding_from_entry substitutes the param, and
+      detect_use.apply_case substitutes the patch text before `git apply`. Nothing
+      here has to be edited when the registry is re-minted, and no answer key is
+      tracked. Substituting inside a unified diff is byte-safe because a nonce is a
+      single token and hunk headers count lines, not characters.
     control:
       title: Working agreements
       statement: >-

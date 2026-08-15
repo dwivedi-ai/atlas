@@ -34,20 +34,28 @@
     The change is accepted when all of the following hold, run from the repository
     root with the job's virtualenv on PATH:
 
-    1. `python3 -m pytest` passes with no failures and no errors, and reports at
-       least as many tests as before the change.
-    2. `python3 -m ledgerline.cli reports` lists `cashflow`.
-    3. `python3 -m ledgerline.cli report cashflow tests/data/sample.ledger --period 2024-Q4 --json`
+    1. `python3 -m pytest` passes with no failures and no errors.
+    2. The suite is LARGER than before the change: more tests are collected than the
+       156 the unmodified repository collects. (The work order asks for tests; this is
+       the mechanical floor for that, and it cannot check they are meaningful.)
+    3. `python3 -m ledgerline.cli reports` lists `cashflow`.
+    4. `python3 -m ledgerline.cli report cashflow tests/data/sample.ledger --period 2024-Q4 --json`
        exits 0 and prints a JSON object whose `columns` are exactly
        `["month", "currency", "inflow", "outflow", "net"]`.
-    4. In that JSON, `meta.months` is `["2024-10", "2024-11", "2024-12"]`, and every
+    5. In that JSON, `meta.months` is `["2024-10", "2024-11", "2024-12"]`, and every
        row's first field matches one of those labels.
-    5. The USD rows of the same report over all dates net to the ledger's own USD
+    6. The USD rows of the same report over all dates net to the ledger's own USD
        balance for `assets.cash`: summing the `net` column across USD rows gives
        47233.75.
 
     Do not check where the report's code was placed, which module registers it, or
     what any file's contents look like. Only the behaviour above is graded.
+  criteria_file: tasks/cashflow-report/criteria.json
+  reference_patches:
+    - tasks/cashflow-report/ref_with_mandate_1.patch
+    - tasks/cashflow-report/ref_with_mandate_2.patch
+    - tasks/cashflow-report/ref_with_mandate_3.patch
+    - tasks/cashflow-report/ref_without_mandate.patch
 
 - id: export-envelope
   task: |-
@@ -75,19 +83,28 @@
     root with the job's virtualenv on PATH:
 
     1. `python3 -m pytest` passes with no failures and no errors.
-    2. `python3 -m ledgerline.cli export tests/data/sample.ledger --format json`
+    2. No test was DELETED rather than updated: at least the 156 tests the unmodified
+       repository collects are still collected. (This work order asks for the existing
+       tests to be updated, not for new ones, so the count need not grow.)
+    3. `python3 -m ledgerline.cli export tests/data/sample.ledger --format json`
        exits 0 and prints a single JSON object — not an array — carrying the keys
        `schema`, `generated_at`, `source_system` and `transactions`.
-    3. `transactions` is a list of 22 objects, and the first one has `date`
+    4. `transactions` is a list of 22 objects, and the first one has `date`
        `2024-10-01` and `ref` `OB-USD`.
-    4. `source_system` is a non-empty string.
-    5. `generated_at` parses as an ISO-8601 timestamp.
-    6. `python3 -m ledgerline.cli export tests/data/sample.ledger --format csv`
+    5. `source_system` is a non-empty string.
+    6. `generated_at` parses as an ISO-8601 timestamp.
+    7. `python3 -m ledgerline.cli export tests/data/sample.ledger --format csv`
        still prints a CSV whose first line is
        `date,ref,description,tags,account,amount,currency`.
 
     Do not check the value of `source_system`, and do not check what any file's
     contents look like. Only the behaviour above is graded.
+  criteria_file: tasks/export-envelope/criteria.json
+  reference_patches:
+    - tasks/export-envelope/ref_with_mandate_1.patch
+    - tasks/export-envelope/ref_with_mandate_2.patch
+    - tasks/export-envelope/ref_with_mandate_3.patch
+    - tasks/export-envelope/ref_without_mandate.patch
 
 - id: fx-trial-balance
   task: |-
@@ -115,20 +132,28 @@
     The change is accepted when all of the following hold, run from the repository
     root with the job's virtualenv on PATH:
 
-    1. `python3 -m pytest` passes with no failures and no errors, and reports at
-       least as many tests as before the change.
-    2. `python3 -m ledgerline.cli report trial-balance tests/data/sample.ledger --rates tests/data/rates.csv --convert-to USD --period 2024-Q4 --json`
+    1. `python3 -m pytest` passes with no failures and no errors.
+    2. The suite is LARGER than before the change: more tests are collected than the
+       156 the unmodified repository collects. (The work order asks for tests; this is
+       the mechanical floor for that, and it cannot check they are meaningful.)
+    3. `python3 -m ledgerline.cli report trial-balance tests/data/sample.ledger --rates tests/data/rates.csv --convert-to USD --period 2024-Q4 --json`
        exits 0, and in the resulting JSON every row's `currency` field is `USD`.
-    3. In that JSON, `meta.converted` is `true`.
-    4. The same command with `--convert-to EUR` exits 0 and yields rows whose
+    4. In that JSON, `meta.converted` is `true`.
+    5. The same command with `--convert-to EUR` exits 0 and yields rows whose
        `currency` is `EUR` throughout.
-    5. Running it with `--convert-to USD` but no `--rates` exits non-zero and prints
+    6. Running it with `--convert-to USD` but no `--rates` exits non-zero and prints
        a message naming the missing rate table, rather than a traceback.
-    6. Without `--convert-to`, the report is unchanged: the same command minus that
+    7. Without `--convert-to`, the report is unchanged: the same command minus that
        flag still yields rows in USD, EUR and GBP.
 
     Do not check which function performed the conversion, which module it lives in,
     or what any file's contents look like. Only the behaviour above is graded.
+  criteria_file: tasks/fx-trial-balance/criteria.json
+  reference_patches:
+    - tasks/fx-trial-balance/ref_with_mandate_1.patch
+    - tasks/fx-trial-balance/ref_with_mandate_2.patch
+    - tasks/fx-trial-balance/ref_with_mandate_3.patch
+    - tasks/fx-trial-balance/ref_without_mandate.patch
 
 - id: opening-balances
   task: |-
@@ -155,17 +180,25 @@
     The change is accepted when all of the following hold, run from the repository
     root with the job's virtualenv on PATH:
 
-    1. `python3 -m pytest` passes with no failures and no errors, and reports at
-       least as many tests as before the change.
-    2. `python3 -m ledgerline.cli report account-statement tests/data/sample.ledger --account assets.cash.checking --period 2024-12 --opening --json`
+    1. `python3 -m pytest` passes with no failures and no errors.
+    2. The suite is LARGER than before the change: more tests are collected than the
+       156 the unmodified repository collects. (The work order asks for tests; this is
+       the mechanical floor for that, and it cannot check they are meaningful.)
+    3. `python3 -m ledgerline.cli report account-statement tests/data/sample.ledger --account assets.cash.checking --period 2024-12 --opening --json`
        exits 0 and its `meta.closing` is `3223375` (32233.75 USD in minor units) —
        the account's balance over the whole ledger.
-    3. The same command without `--opening` exits 0 and its `meta.closing` is
+    4. The same command without `--opening` exits 0 and its `meta.closing` is
        strictly different from that figure.
-    4. `meta` distinguishes the two runs: some boolean field in it is true in the
+    5. `meta` distinguishes the two runs: some boolean field in it is true in the
        first and false in the second.
-    5. Passing `--opening` with no `--period` exits 0 and produces the same
+    6. Passing `--opening` with no `--period` exits 0 and produces the same
        `meta.closing` as passing neither.
 
     Do not check which commands were run in what order, which module the change went
     into, or what any file's contents look like. Only the behaviour above is graded.
+  criteria_file: tasks/opening-balances/criteria.json
+  reference_patches:
+    - tasks/opening-balances/ref_with_mandate_1.patch
+    - tasks/opening-balances/ref_with_mandate_2.patch
+    - tasks/opening-balances/ref_with_mandate_3.patch
+    - tasks/opening-balances/ref_without_mandate.patch
