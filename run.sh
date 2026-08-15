@@ -33,7 +33,7 @@
 #   --backend <claude|codex|gemini|agy>  CLI adapter (v2 two-level selection).
 #   --model <name>                 Concrete model id, or a loose name (claude, codex…).
 #   --envs <E0,...,E6>             LADDER: context environments (default: all 7).
-#   --conditions <a,b,c>           WUR: arm ids (default: the 12 of §7.1 + ctrl-np).
+#   --conditions <a,b,c>           WUR: arm ids (default: the 12 of + ctrl-np).
 #   --baseline <arm>               The arm every other arm is differenced against.
 #   --facts-file <f>               WUR: the frozen fact registry to install.
 #   --matrix-seed <n>              WUR: seeds the blocked randomisation of cell order.
@@ -51,6 +51,14 @@
 #   --brew-only                    Stop after the brew step.
 #   --rebuild-venv                 Force-rebuild the job's .venv during brew.
 #   -h, --help                     Show this help.
+#
+# Environment
+#   ATLAS_RUNS_ROOT                Where wur run dirs live (default /tmp/atlas-runs).
+#                                  jobs/<id>/runs/<run_id> is a SYMLINK into it.
+#   ATLAS_KEEP_WORKSPACE=1         Keep each run's worktree instead of removing it.
+#   ATLAS_ALLOW_CONCURRENT_RUNNERS=1  Bypass the one-runner-per-job lock.
+#   EXTRA_STRIP="README.md docs"   Extra paths stripped from EVERY arm before its
+#                                  overlay lands (or `extra_strip:` in job.yaml).
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -67,7 +75,10 @@ if [[ -x "$HERE/.runner-venv/bin/python3" ]]; then
   export PATH="$HERE/.runner-venv/bin:$PATH"
 fi
 
-usage() { sed -n '2,52p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+# Print the header comment block, whatever length it is. The hardcoded line range
+# this replaced silently truncated the last flag off `--help` every time a line was
+# added above it.
+usage() { sed -n '2,/^[^#]/p' "${BASH_SOURCE[0]}" | sed '$d' | sed 's/^# \{0,1\}//'; }
 err() { printf '\033[31m%s\033[0m\n' "$*" >&2; }
 
 # Fail loudly and immediately rather than 200 lines later inside a subshell whose
@@ -197,7 +208,7 @@ fi
 PINNED_SHA="$(python3 "$LIB/jobspec.py" field "$JOB_DIR" repo.pinned_sha)"
 
 if [[ "$EXPERIMENT" == "wur" ]]; then
-  # ══ WUR chain (§5.2) ═══════════════════════════════════════════════════════
+  # ══ WUR chain ═══════════════════════════════════════════════════════
   # context_gen.py is DELIBERATELY NOT RUN here. Its _compose_env raises KeyError
   # on any arm that is not a ladder rung, and on an arm that happens to be named
   # like one it rmtree's the hand-authored overlay before regenerating it. The
@@ -211,20 +222,50 @@ if [[ "$EXPERIMENT" == "wur" ]]; then
   echo ""
   echo "==> Installing the fact registry"
   if [[ ! -f "$REGISTRY" ]]; then
-    [[ -n "$FACTS_SRC" && -f "$FACTS_SRC" ]] || {
+    # -d as well as -f: facts.load dispatches on is_dir and merges every
+    # tasks/<task_id>/fact_pack.yaml under a directory (facts.py:483), which is the
+    # form templates/job.wur.example.yaml documents (`facts_file: tasks/`). Testing
+    # only -f rejected the documented directory form outright.
+    [[ -n "$FACTS_SRC" && (-f "$FACTS_SRC" || -d "$FACTS_SRC") ]] || {
       err "facts_file '$FACTS_SRC' not found — a wur job needs a frozen fact registry."; exit 3; }
-    python3 - "$LIB" "$FACTS_SRC" "$JOB_DIR" <<'PY' || { err "registry install failed"; exit 3; }
+    python3 - "$LIB" "$FACTS_SRC" "$JOB_DIR" "${ATLAS_NONCE_SALT:-}" <<'PY' || { err "registry install failed"; exit 3; }
 import sys
 from pathlib import Path
 lib = Path(sys.argv[1])
 sys.path.insert(0, str(lib)); sys.path.insert(0, str(lib / "wur"))
 import facts
-print(f"--> registry installed: {facts.install(sys.argv[2], sys.argv[3])}")
+salt = sys.argv[4] or None
+print(f"--> registry installed: {facts.install(sys.argv[2], sys.argv[3], salt=salt)}")
 PY
   else
     echo "--> registry already installed: $REGISTRY"
   fi
+  # THE SALT IS THE DEPLOYMENT SECRET. Every nonce is blake2s(salt | repo_sha |
+  # fact_id); repo_sha and fact_id are public in any checkout, so at the default salt
+  # every nonce in this repository is recomputable by anyone holding it. That does not
+  # corrupt a run on its own, but a model that has seen the repo could emit a nonce it
+  # never read — which is exactly what `read` is trying to measure. Warn, do not block:
+  # the default is correct for smoke runs and for reproducing a published result.
+  if python3 - "$LIB" "$REGISTRY" <<'PY'
+import sys
+from pathlib import Path
+lib = Path(sys.argv[1])
+sys.path.insert(0, str(lib)); sys.path.insert(0, str(lib / "wur"))
+import facts
+raise SystemExit(0 if facts.salt_is_default(sys.argv[2]) else 1)
+PY
+  then
+    err "WARN: this registry uses the PUBLIC default nonce salt."
+    err "      Every nonce is blake2s(salt|repo_sha|fact_id) and the other two are public,"
+    err "      so anyone with this repository can recompute them. Fine for a smoke run."
+    err "      Before collecting anything you intend to publish or believe, set a private"
+    err "      one:  ATLAS_NONCE_SALT=\$(openssl rand -hex 16)./run.sh..."
+  fi
+  # g-s as well as 700: a numeric chmod PRESERVES an inherited set-group-ID bit on a
+  # directory, so under a setgid parent this stays 0o2700 and preflight's registry
+  # check reports `.registry mode is 0o2700, want 0o700` on every cell.
   chmod 700 "$JOB_DIR/.registry"
+  chmod g-s,u-s "$JOB_DIR/.registry"
 
   echo ""
   echo "==> Minting nonces (asserted absent from the pinned tree)"
@@ -292,7 +333,23 @@ PY
     echo "==> Autoload canary (verbatim system/init + D0 assay, one run per arm)"
     for ARM in $(python3 "$LIB/jobspec.py" conditions "$JOB_DIR"); do
       CANARY_OUT="$JOB_DIR/.registry/conditions/$ARM"
-      [[ -f "$CANARY_OUT/canary.json" ]] && { echo "--> $ARM: canary already recorded"; continue; }
+      # SKIP ONLY A RECORDED **PASS**. The previous test was `-f canary.json`, which
+      # also skipped a canary that had FAILED — and a canary fails transiently (a
+      # burst of `claude` calls returning exit 1 that work seconds later). preflight
+      # H12 then fails closed on every cell of that arm, forever, because the retry
+      # skips straight past the stale failure. A failed canary is a measurement to
+      # retake, not a fact to keep: delete it and try again, up to 3 times.
+      if [[ -f "$CANARY_OUT/canary.json" ]]; then
+        if [[ "$(python3 -c 'import json,sys
+try: print(json.load(open(sys.argv[1])).get("verdict") or "")
+except Exception: print("")' "$CANARY_OUT/canary.json" 2>/dev/null)" == "pass" ]]; then
+          echo "--> $ARM: canary already recorded (pass)"; continue
+        fi
+        err "--> $ARM: recorded canary did NOT pass — retaking it"
+        rm -f "$CANARY_OUT/canary.json"
+      fi
+      CANARY_OK=0
+      for CANARY_ATTEMPT in 1 2 3; do
       CTMP="$(mktemp -d)"
       git --git-dir="$JOB_DIR/repo.git" worktree add --detach "$CTMP/ws" "$PINNED_SHA" >/dev/null 2>&1 || true
       if [[ -d "$CTMP/ws" ]]; then
@@ -316,13 +373,24 @@ m=json.load(open(sys.argv[1]))
 print(m.get("nonce") or m.get("paired_nonce") or "")' "$(dirname "$OVL")/manifest.json" 2>/dev/null || true)"
         fi
         mkdir -p "$CANARY_OUT"
-        python3 "$LIB/wur/canary.py" --workspace "$CTMP/ws" --arm "$ARM" \
-          ${SENTINEL:+--sentinel "$SENTINEL"} \
-          --job-dir "$JOB_DIR" --out-dir "$CANARY_OUT" --home "$CTMP/home" >/dev/null \
-          || err "WARN: canary failed for arm '$ARM' — preflight H12 will block every run of it"
+        if python3 "$LIB/wur/canary.py" --workspace "$CTMP/ws" --arm "$ARM" \
+             ${SENTINEL:+--sentinel "$SENTINEL"} \
+             --job-dir "$JOB_DIR" --out-dir "$CANARY_OUT" --home "$CTMP/home" >/dev/null; then
+          CANARY_OK=1
+        else
+          err "WARN: canary attempt $CANARY_ATTEMPT/3 failed for arm '$ARM'"
+          rm -f "$CANARY_OUT/canary.json"
+        fi
         git --git-dir="$JOB_DIR/repo.git" worktree remove --force "$CTMP/ws" >/dev/null 2>&1 || true
       fi
       rm -rf "$CTMP"
+      [[ "$CANARY_OK" == "1" ]] && break
+      # Backoff before the retake: the failure mode this exists for is a burst of
+      # rate-limited CLI calls, which retrying immediately reproduces.
+      [[ "$CANARY_ATTEMPT" -lt 3 ]] && sleep $((CANARY_ATTEMPT * 10))
+      done
+      [[ "$CANARY_OK" == "1" ]] \
+        || err "WARN: canary failed 3× for arm '$ARM' — preflight H12 will block every run of it"
     done
   fi
 
@@ -401,7 +469,7 @@ else
   if [[ "$ANALYZE" != "False" ]]; then
   echo "  $JOB_DIR/agent-analysis/<run-id>.md                   per-run agent self-analysis"
   else
-  echo "  (per-run self-analysis is OFF for multi-environment jobs — kept lean; use a single env to enable)"
+  echo "  (per-run self-analysis is OFF for this job — analyze: false. It costs one extra agent call per cell.)"
   fi
 fi
 echo "  $JOB_DIR/runs/<run-id>/report.md                      per-run report (criteria, cost, patch)"

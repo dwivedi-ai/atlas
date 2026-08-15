@@ -24,6 +24,7 @@
 #   AGENT_ID  — the resolved agent id   (required)
 #   RUN_DIR   — the run directory       (default $JOB_DIR/runs/$RUN_ID)
 #   TASK_ID / EXPERIMENT / CONDITION_ID (optional)
+#   ATLAS_KEEP_WORKSPACE=1 — keep the worktree instead of removing it (step 7)
 set -euo pipefail
 
 LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -75,8 +76,7 @@ if [[ -z "$BASELINE_SHA" ]]; then
   BASELINE_SHA="$(git -C "$WORKSPACE" rev-parse HEAD 2>/dev/null || echo HEAD)"
   echo "--> WARN: run_meta.json carried no baseline_sha; falling back to $BASELINE_SHA" >&2
 fi
-(
-  cd "$WORKSPACE"
+(cd "$WORKSPACE"
   git diff "$BASELINE_SHA" > "$RUN_DIR/git.patch" 2>/dev/null || true
   git ls-files --others --exclude-standard \
       -x venv -x 'venv/**' -x '__pycache__' -x '**/__pycache__/**' -x '*.pyc' \
@@ -215,7 +215,7 @@ fi
 
 # ── 3b. Self-analysis (the reflection pass) — needs the workspace, runs after grade ──
 # Skipped in wur: it is a second, unmeasured agent invocation inside the very
-# workspace whose contents are the independent variable. §5.2 has no such step.
+# workspace whose contents are the independent variable. has no such step.
 ANALYZE="$(python3 "$LIB_DIR/jobspec.py" field "$JOB_DIR" analyze)"
 if [[ "$EXPERIMENT" == "wur" ]]; then
   echo "--> Self-analysis skipped (wur: no unmeasured agent call in a measured workspace)"
@@ -232,7 +232,7 @@ fi
 if [[ "$EXPERIMENT" == "wur" && -f "$LIB_DIR/wur/reconcile.py" ]]; then
   echo "--> Reconciling (regions → exposure → events → probes → trace)"
   # The fact cards MUST be passed in: the registry is deliberately not an ancestor
-  # of the run dir (V9), so reconcile cannot find them by walking up. Without them
+  # of the run dir, so reconcile cannot find them by walking up. Without them
   # exposure.jsonl and fact_trace.jsonl are empty BY CONSTRUCTION — a silent zero
   # read-rate rather than an error — so both candidates are tried and their absence
   # is called out rather than left to a generic "reconcile failed".
@@ -256,7 +256,7 @@ echo "--> Extracting telemetry"
 TIMESTAMP_END=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 python3 - "$RUN_DIR" "$TIMESTAMP_END" <<'PY' || true
 """Close out run_meta.json: the end timestamp, plus the two hashes only the
-driver could measure (§5.1(6)). Pre-computed values written at setup are kept
+driver could measure. Pre-computed values written at setup are kept
 when the driver produced none — a dead run still carries what was knowable."""
 import json, sys
 from pathlib import Path
@@ -303,7 +303,7 @@ if [[ -f "$RUN_DIR/stream.jsonl" ]]; then
 fi
 if [[ "$EXPERIMENT" == "wur" ]]; then
   # persistedOutputPath files: a 926 KB Bash stdout reached the model as a
-  # 2,299-char stub (V6). These copies are what the model did NOT see. They are
+  # 2,299-char stub. These copies are what the model did NOT see. They are
   # kept for deferred-exposure analysis and are NEVER counted as exposure.
   python3 - "$RUN_DIR" <<'PY' || true
 import gzip, json, re, shutil, sys
@@ -335,8 +335,7 @@ for raw in sorted(seen):
         copied += 1
     except Exception:
         pass
-(dest / "index.json").write_text(json.dumps(
-    {"referenced": sorted(seen), "copied": copied}, indent=2) + "\n")
+(dest / "index.json").write_text(json.dumps({"referenced": sorted(seen), "copied": copied}, indent=2) + "\n")
 print(f"--> Persisted outputs: {copied} copied of {len(seen)} referenced")
 PY
 fi
@@ -355,11 +354,22 @@ if [[ -f "$GEM_SETTINGS_BACKUP" ]]; then
   echo "--> Restored Gemini settings"
 fi
 
+# ATLAS_KEEP_WORKSPACE=1 keeps the worktree. The default is still to remove it — a
+# 7-env × multi-rep matrix would otherwise keep one full checkout per cell — but
+# "removed unconditionally, no flag" is what made a verdict unreproducible: grade
+# once, at teardown, against a tree that no longer exists. The reproducible path is
+# `judge.py --regrade`, which rebuilds from refs/atlas/baseline-run/<RUN_ID> +
+# git.patch and needs no workspace at all; this flag is for the case where you want
+# to open the tree by hand. The credential copy is deleted either way, below.
+if [[ "${ATLAS_KEEP_WORKSPACE:-0}" == "1" ]]; then
+  echo "--> Keeping worktree (ATLAS_KEEP_WORKSPACE=1): $WORKSPACE"
+  echo "    remove it later with: git --git-dir=$BARE worktree remove --force $WORKSPACE"
+else
 echo "--> Removing worktree"
-(
-  flock 200
+(flock 200
   git --git-dir="$BARE" worktree remove --force "$WORKSPACE" 2>/dev/null || rm -rf "$WORKSPACE"
 ) 200>"$LOCK"
+fi
 
 if [[ -e "$RUN_DIR/claude_home" ]]; then
   rm -rf "$RUN_DIR/claude_home"

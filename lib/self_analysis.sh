@@ -103,7 +103,7 @@ ANALYSIS_EXIT=0
     # < /dev/null: every one-shot claude invocation without --input-format
     # stream-json otherwise stalls 3 s and writes "Warning: no stdin data
     # received in 3s" to stderr, which a naive `[ -s stderr ]` check reads as a
-    # failed reflection pass (V19).
+    # failed reflection pass.
     timeout "$MAX_SECONDS" env -u ANTHROPIC_API_KEY claude \
       --model "$AGENT_ID" --output-format json --print \
       --permission-mode bypassPermissions "$PROMPT" \

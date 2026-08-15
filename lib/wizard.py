@@ -70,7 +70,31 @@ def ask_choice(prompt: str, choices: list[str], default: str) -> str:
         _p(f"  choose one of: {opts}")
 
 
+USAGE = """\
+wizard.py — interactive job authoring for exp-runner (ladder mode).
+
+Asks for the repo, task(s), acceptance, model, environments and reps, then writes a
+validated jobs/<id>/job.yaml and prints its path. Normally reached as `./run.sh` with
+no source flags, which runs the job straight afterwards.
+
+./run.sh                    author interactively, then brew + run
+  python3 lib/wizard.py       author only; prints the job dir
+
+Multi-line answers (task / acceptance): type the text, then a single line with just
+"." to finish. Defaults are in [brackets]; press Enter to accept.
+
+Every prompt goes to STDERR and only the job dir to STDOUT, so `JD=$(...)` works.
+
+This wizard authors LADDER jobs. A `wur` job needs a fact registry, arm ids and a
+matrix seed, which are not promptable — start from templates/job.wur.example.yaml,
+or `run.sh --experiment wur` with flags.
+"""
+
+
 def main() -> None:
+    if any(a in ("-h", "--help") for a in sys.argv[1:]):
+        print(USAGE)
+        return
     _p("── exp-runner: new job ──────────────────────────────────────────")
     src = ask("Repository (git URL or local path)")
     is_path = (Path(src).expanduser().exists() and not src.endswith(".git")) or src.startswith(("/", "./", "../", "~"))
@@ -93,7 +117,10 @@ def main() -> None:
             break
         _p()
 
-    model = ask_choice("Model", ["codex", "claude", "gemini", "agy"], "codex")
+    # Default `claude`, not `codex`: it is what install.sh checks for as DEFAULT_BACKEND
+    # and what lib/agent.py's registry resolves to, so hitting Enter used to author a
+    # job that could not run on the machine the installer had just declared ready.
+    model = ask_choice("Model", ["claude", "codex", "gemini", "agy"], "claude")
     _p()
     _p("Context environments — run the task across levels of project context?")
     _p("  E0 bare → E1 +README → E2 +AGENTS → E3 +PROJECT → E4 full-XO → E5 +memory → E6 DOX.")

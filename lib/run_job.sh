@@ -28,8 +28,61 @@
 set -uo pipefail
 
 LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Same PATH prepend as run.sh. This script is a DOCUMENTED standalone entry point
+# ("matrix only, skips finished cells"), so it cannot assume run.sh exported the
+# environment: every helper under lib/ calls a bare `python3`, and on a PEP 668
+# machine that resolves to a system interpreter with no yaml/jsonschema. Reached
+# through run.sh the prepend is already there and this is a no-op.
+if [[ -x "$LIB_DIR/../.runner-venv/bin/python3" ]]; then
+  export PATH="$(cd "$LIB_DIR/.." && pwd)/.runner-venv/bin:$PATH"
+fi
+if ! python3 -c 'import yaml, jsonschema' 2>/dev/null; then
+  echo "ERROR: python3 cannot import yaml/jsonschema — run./install.sh first." >&2
+  echo "  (interpreter checked: $(command -v python3 || echo 'none on PATH'))" >&2
+  exit 1
+fi
+
 : "${JOB_DIR:?JOB_DIR is required}"
 JOB_DIR="$(cd "$JOB_DIR" && pwd)"
+
+# ── ONE RUNNER PER JOB ───────────────────────────────────────────────────────
+# The per-cell.claim below guards concurrent workers of the SAME runner. It
+# cannot survive a SECOND runner launched against the same job, because the usual
+# way that happens is an operator purging "incomplete" cells — which deletes the
+# claim along with the directory. Measured consequence in the field: the first
+# runner, still alive, wrote `.run_done` into a freshly recreated directory
+# WITHOUT re-running the cell, and two runs containing nothing but `.run_done` and
+# `watch/` entered a published dataset. Nothing downstream could tell them from
+# real runs. Liveness is checked by PID rather than `pgrep -f`, which matches its
+# own command line and its own shell pipeline.
+RUNNER_LOCK="$JOB_DIR/.runner.lock"
+if ! mkdir "$RUNNER_LOCK" 2>/dev/null; then
+  RL_OWNER="$(cat "$RUNNER_LOCK/owner" 2>/dev/null || true)"
+  RL_PID="${RL_OWNER%% *}"
+  if [[ -n "$RL_PID" ]] && kill -0 "$RL_PID" 2>/dev/null; then
+    if [[ "${ATLAS_ALLOW_CONCURRENT_RUNNERS:-0}" == "1" ]]; then
+      echo "WARN: another runner holds $RUNNER_LOCK ($RL_OWNER) — continuing anyway" >&2
+      RUNNER_LOCK=""
+    else
+      echo "ERROR: another runner is already running this job." >&2
+      echo "       lock:  $RUNNER_LOCK" >&2
+      echo "       owner: $RL_OWNER" >&2
+      echo "       Wait for it, or kill it and re-run. Never point two runners at one" >&2
+      echo "       job: cells purged under a live runner come back marked done but empty." >&2
+      echo "       Override (you have checked, and you accept that): ATLAS_ALLOW_CONCURRENT_RUNNERS=1" >&2
+      exit 1
+    fi
+  else
+    [[ -n "$RL_OWNER" ]] && echo "NOTE: taking over a stale runner lock (owner '$RL_OWNER' is gone)" >&2
+    rm -rf "$RUNNER_LOCK"
+    mkdir "$RUNNER_LOCK" 2>/dev/null || RUNNER_LOCK=""
+  fi
+fi
+if [[ -n "$RUNNER_LOCK" ]]; then
+  echo "$$ $(hostname) $(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$RUNNER_LOCK/owner"
+  trap 'rm -rf "$RUNNER_LOCK"' EXIT
+fi
 
 field() { python3 "$LIB_DIR/jobspec.py" field "$JOB_DIR" "$1"; }
 
@@ -47,6 +100,26 @@ PROBE_HI="$(field probe.hi)";                 [[ -n "$PROBE_HI" ]] || PROBE_HI=3
 PROBE_MAX_PROBES="$(field probe.max_probes)"; [[ -n "$PROBE_MAX_PROBES" ]] || PROBE_MAX_PROBES=24
 PROBE_SALT="$(field probe.salt)";             [[ -n "$PROBE_SALT" ]] || PROBE_SALT="wur-v1"
 GATE_TIMEOUT_MS="$(field probe.gate_timeout_ms)"; [[ -n "$GATE_TIMEOUT_MS" ]] || GATE_TIMEOUT_MS=300000
+# extra_strip is a LIST in job.yaml; setup_run.sh takes a space-separated string.
+# The environment wins over the spec so a one-off can be driven by hand, which is
+# how it was first used. Empty by default — nothing changes unless it is set.
+if [[ -z "${EXTRA_STRIP:-}" ]]; then
+  EXTRA_STRIP="$(python3 "$LIB_DIR/jobspec.py" field "$JOB_DIR" extra_strip 2>/dev/null || true)"
+  # `jobspec field` prints a list as JSON; flatten it to a space-separated string.
+  EXTRA_STRIP="$(python3 - "$EXTRA_STRIP" <<'PY'
+import json, sys
+raw = (sys.argv[1] or "").strip()
+if not raw:
+    print(""); raise SystemExit
+try:
+    v = json.loads(raw)
+except ValueError:
+    v = raw
+print(" ".join(str(x) for x in v) if isinstance(v, list) else str(v))
+PY
+)"
+fi
+[[ -n "$EXTRA_STRIP" ]] && echo "NOTE: extra_strip active for every arm: $EXTRA_STRIP" >&2
 
 mapfile -t TASK_IDS < <(python3 "$LIB_DIR/jobspec.py" tasks "$JOB_DIR")
 [[ ${#TASK_IDS[@]} -gt 0 ]] || { echo "ERROR: job has no tasks" >&2; exit 1; }
@@ -87,7 +160,7 @@ command -v "$AGENT_CLI" >/dev/null || {
 }
 
 # ── Backend concurrency policy ───────────────────────────────────────────────
-# A table, not a hard clamp. claude 4 is MEASURED (S3: four worktrees, four
+# A table, not a hard clamp. claude 4 is MEASURED (four worktrees, four
 # isolated CLAUDE_CONFIG_DIRs, four --settings files, all clean); 6 is the
 # untested ceiling, so the table stops at 4 unless job.yaml says otherwise.
 # gemini and agy remain 1: both still share global CLI state that no per-run
@@ -157,13 +230,12 @@ echo " Reps:        $REPS   →   $TOTAL cells total"
 echo "================================================================"
 
 STATUS_DIR="$(mktemp -d)"; DONE_DIR="$(mktemp -d)"
-trap 'rm -rf "$STATUS_DIR" "$DONE_DIR"' EXIT
+trap 'rm -rf "$STATUS_DIR" "$DONE_DIR" ${RUNNER_LOCK:+"$RUNNER_LOCK"}' EXIT
 
 # ── schedule_actual.jsonl — the REALIZED order, one flock'd writer at a time ──
 # V8 measured unlocked appends past PIPE_BUF interleaving into unparseable lines.
 _actual() {   # _actual <json-object-as-one-line>
-  (
-    flock 202
+  (flock 202
     printf '%s\n' "$1" >> "$ACTUAL"
   ) 202>"$ACTUAL_LOCK"
 }
@@ -205,7 +277,7 @@ run_cell() {
   fi
   mkdir -p "$RUN_DIR"
   # $JOB_DIR/runs/<run_id> stays the discovery path for report.py / figures.py /
-  # viz, even when the run itself lives under $ATLAS_RUNS_ROOT (V9: no secret may
+  # viz, even when the run itself lives under $ATLAS_RUNS_ROOT (no secret may
   # be an ancestor of a workspace). preflight resolves symlinks, so this link
   # does not put $JOB_DIR back on the workspace's `..` path.
   if [[ "$RUN_DIR" != "$JOB_DIR/runs/$RUN_ID" ]]; then
@@ -243,7 +315,7 @@ run_cell() {
   if ! JOB_DIR="$JOB_DIR" RUN_ID="$RUN_ID" RUN_DIR="$RUN_DIR" AGENT_ID="$AGENT_ID" REP="$REP" \
        TASK_ID="$TID" ENV_ID="$ARM" CONDITION_ID="$ARM" TASK_PROMPT="$TASK_PROMPT" \
        EXPERIMENT="$EXPERIMENT" OVERLAY_MODE="$OVERLAY_MODE" \
-       BACKEND="$BACKEND" MODEL="$AGENT_MODEL" \
+       BACKEND="$BACKEND" MODEL="$AGENT_MODEL" EXTRA_STRIP="$EXTRA_STRIP" \
        BUDGET_STEPS="$BUDGET_STEPS" PROBE_ENABLED="$PROBE_ENABLED" \
        PROBE_LO="$PROBE_LO" PROBE_HI="$PROBE_HI" PROBE_MAX_PROBES="$PROBE_MAX_PROBES" \
        PROBE_SALT="$PROBE_SALT" GATE_TIMEOUT_MS="$GATE_TIMEOUT_MS" \
@@ -262,7 +334,7 @@ run_cell() {
                    --run-id "$RUN_ID" --job-id "$JOB_ID")
     # H8 ("the nonce IS in baseline_sha for a fact arm, and is NOT for a control
     # arm") is unverifiable without the arm's manifest, and an unverifiable plant
-    # is an excluded run, not a miss (§4.1). plant.py emits the manifest at one of
+    # is an excluded run, not a miss. plant.py emits the manifest at one of
     # two depths depending on whether the registry carries one fact or one per task.
     local MPATH
     for MPATH in "$JOB_DIR/.registry/conditions/$TID/$ARM/manifest.json" \

@@ -59,6 +59,23 @@ def _yaml(p: Path):
         return None
 
 
+def _spec_model(spec: dict) -> str:
+    """The job's model, from a v1 or a v2 spec — jobspec._model_of's precedence.
+
+    v2 moved selection into agent{backend, model, effort} and dropped the top-level
+    `model:` key, so reading `spec["model"]` alone showed every v2 job as "—" on the
+    Atlas: a dashboard that silently claims not to know something it was told.
+    """
+    agent = spec.get("agent")
+    if isinstance(agent, dict):
+        for key in ("model", "backend"):
+            v = agent.get(key)
+            if isinstance(v, str) and v.strip():
+                return v.strip()
+    v = spec.get("model")
+    return v.strip() if isinstance(v, str) and v.strip() else "—"
+
+
 def _env_sort_key(e: str):
     return (0, int(e[1:])) if e[:1] in "Ee" and e[1:].isdigit() else (1, e)
 
@@ -334,7 +351,7 @@ def job_summary(job_dir: Path) -> dict:
         figs = sorted(f.name for f in aa.glob("fig_*.png"))
     return {
         "id": job_dir.name,
-        "model": spec.get("model", "—"),
+        "model": _spec_model(spec),
         "reps": spec.get("reps", 1),
         "n_tasks": len(tasks) or len({r["task"] for r in runs}),
         "envs": envs,
@@ -361,7 +378,7 @@ def job_detail(job_dir: Path) -> dict:
     figs = sorted(f.name for f in aa.glob("fig_*.png")) if aa.exists() else []
     return {
         "id": job_dir.name,
-        "model": spec.get("model", "—"),
+        "model": _spec_model(spec),
         "reps": spec.get("reps", 1),
         "repo_url": spec.get("repo", {}).get("url", ""),
         "pinned_sha": spec.get("repo", {}).get("pinned_sha", ""),

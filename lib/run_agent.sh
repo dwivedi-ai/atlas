@@ -14,7 +14,7 @@
 #   wur     →  lib/wur/driver.py, which owns the child from launch to exit: it is
 #              the child's PARENT, never a pipe stage, because a tap in the pipe
 #              means a tap crash kills the agent with SIGPIPE and truncates the
-#              only copy of the raw stream (§6.1).
+#              only copy of the raw stream.
 #
 # Input (environment):
 #   RUN_DIR      — the run directory                        (required)
@@ -104,7 +104,7 @@ AGENT_EXIT_CODE=0
     # login (not a stray/bogus API key). bypassPermissions: headless --print cannot
     # prompt for approvals, so without it every Edit/Write/Bash would be denied.
     # --session-id makes the transcript findable by id; < /dev/null skips the 3 s
-    # "no stdin data received" stall every one-shot otherwise pays (V19).
+    # "no stdin data received" stall every one-shot otherwise pays.
     SID_ARGS=()
     [[ -n "$SESSION_UUID" ]] && SID_ARGS=(--session-id "$SESSION_UUID")
     timeout "$MAX_SECONDS" env -u ANTHROPIC_API_KEY claude \

@@ -69,7 +69,7 @@ JOB_ID="$(field job_id)"
 # A wur run root must NOT sit under $JOB_DIR: the fact registry lives at
 # $JOB_DIR/.registry/, and V9 measured the agent READING a registry three `..`
 # hops above its workspace under bypassPermissions. preflight H2 fails closed if
-# $JOB_DIR is an ancestor of the workspace, so §5.3 puts wur runs under
+# $JOB_DIR is an ancestor of the workspace, so puts wur runs under
 # $ATLAS_RUNS_ROOT and leaves a symlink behind at the legacy path so report.py,
 # figures.py and viz/server.py keep discovering runs where they always have.
 if [[ -z "${RUN_DIR:-}" ]]; then
@@ -91,7 +91,7 @@ WORKSPACE="$RUN_DIR/workspace"
 
 # OVERLAY_MODE replaces the old MULTIENV flag. `ladder` strips the repo's own
 # orienting docs and drops in environments/<rung>/; `wur` strips the CLI's own
-# context surfaces (V5) and drops in .registry/conditions/<arm>/overlay/; `none`
+# context surfaces and drops in .registry/conditions/<arm>/overlay/; `none`
 # runs the repo as-is. MULTIENV=1 is still honoured so a half-updated caller does
 # not silently downgrade a ladder job to a bare one.
 if [[ -z "${OVERLAY_MODE:-}" ]]; then
@@ -105,8 +105,7 @@ echo "==> Setting up run: $RUN_ID  (experiment=$EXPERIMENT overlay=$OVERLAY_MODE
 
 # ── Isolated worktree at the pinned SHA (flock: worktree metadata is repo-wide) ──
 echo "--> Creating worktree at $SHA"
-(
-  flock 200
+(flock 200
   # Drop registrations whose directories are gone. Without this, a run dir deleted
   # by hand (or by a wiped $ATLAS_RUNS_ROOT) makes every later attempt at the same
   # run_id fail with "missing but already registered worktree" — a resumable job
@@ -189,6 +188,20 @@ case "$OVERLAY_MODE" in
     ;;
 esac
 
+# EXTRA_STRIP: additional top-level orienting docs to remove, space-separated,
+# empty by default so no existing experiment changes behaviour. It exists for jobs
+# whose target is a REAL repository rather than a synthetic fixture: both sqlglot
+# and pandera ship their own README/CONTRIBUTING (and their own AGENTS.md), so
+# without this a "bare" arm still carries orienting context and a scaffold arm
+# competes with the repo's own contract instead of replacing it. wur mode strips
+# only the CLI's context surfaces, so this is the hook that makes a wur "bare" arm
+# genuinely bare. Applied AFTER the mode-specific strip and BEFORE the overlay copy,
+# and to EVERY arm of the job, so it can never differ between arms.
+if [[ -n "${EXTRA_STRIP:-}" ]]; then
+  # shellcheck disable=SC2086 — deliberate word splitting: a space-separated list
+  _strip $EXTRA_STRIP
+fi
+
 if [[ -n "$OVERLAY_DIR" && -d "$OVERLAY_DIR" ]] \
    && [[ -n "$(find "$OVERLAY_DIR" -type f 2>/dev/null)" ]]; then
   cp -r "$OVERLAY_DIR"/. "$WORKSPACE/"
@@ -206,7 +219,7 @@ fi
     -m "$BASELINE_MSG" --allow-empty
 )
 BASELINE_SHA="$(git -C "$WORKSPACE" rev-parse HEAD)"
-# A PER-RUN ref, not the flat `refs/atlas/baseline` of §5.2. Refs outside
+# A PER-RUN ref, not the flat `refs/atlas/baseline` of Refs outside
 # refs/worktree/ are SHARED by every worktree of the bare repo, so under four-way
 # concurrency the flat name is last-writer-wins: three of four runs would lose the
 # only pointer keeping their baseline commit reachable once their worktree is gone,
@@ -235,7 +248,7 @@ fi
 # ── Seed an isolated agy home (agy only) so trials don't share global state ──
 # --gemini_dir points agy's whole state base at this per-run dir; seed it with just the
 # auth + onboarding files so it authenticates without a login and leaves knowledge/,
-# conversations/, brain/ fresh per run (no cross-trial contamination). See AGY_DOCS.md §11.
+# conversations/, brain/ fresh per run (no cross-trial contamination). See AGY_DOCS.md
 if [[ "$AGENT_ID" == agy* ]]; then
   AGY_SRC="$HOME/.gemini/antigravity-cli"
   AGY_HOME="$RUN_DIR/agy_home"
@@ -262,12 +275,18 @@ SETTINGS_PATH=""
 if [[ "$AGENT_ID" == claude-* || "${BACKEND:-}" == "claude" ]]; then
   CLAUDE_HOME="$RUN_DIR/claude_home"
   mkdir -p "$CLAUDE_HOME"
+  # `chmod 700` alone is NOT enough. GNU chmod PRESERVES the set-group-ID bit of a
+  # directory for a numeric mode (3- or 4-digit alike), and a directory created
+  # under a setgid parent inherits that bit — so on a runs root like `drwxr-sr-x`
+  # this comes out 0o2700, preflight H3 reports `claude_home mode is 0o2700, want
+  # 0o700`, and EVERY cell of the matrix is blocked. Measured on this machine.
+  # The symbolic clear is the only form that actually removes it.
   chmod 700 "$CLAUDE_HOME"
+  chmod g-s,u-s "$CLAUDE_HOME"
   # ONLY .credentials.json. Anything else copied out of ~/.claude is uncontrolled
-  # context sitting directly upstream of the measurement (S2). The lock is on the
+  # context sitting directly upstream of the measurement. The lock is on the
   # SOURCE: four concurrent readers of a file the CLI itself may be rewriting.
-  (
-    flock 201
+  (flock 201
     if [[ -f "$HOME/.claude/.credentials.json" ]]; then
       cp "$HOME/.claude/.credentials.json" "$CLAUDE_HOME/.credentials.json"
     fi
@@ -290,7 +309,7 @@ PY
   # preflight H12 compares `claude --version | split()[0]` against the canary's
   # `system/init.claude_code_version`, which is also bare; recording the banner
   # here would put a third spelling of the same fact into run_record.condition.
-  # `< /dev/null`: without it every one-shot pays a 3 s stall (V19).
+  # `< /dev/null`: without it every one-shot pays a 3 s stall.
   CLI_VERSION="$(claude --version < /dev/null 2>/dev/null | head -1 | awk '{print $1}' || true)"
 fi
 
@@ -355,7 +374,7 @@ export MATRIX_SEED="${MATRIX_SEED:-}" CELL_INDEX="${CELL_INDEX:-}"
 export RUN_ORDER_INDEX="${RUN_ORDER_INDEX:-}" CONCURRENCY_AT_LAUNCH="${CONCURRENCY_AT_LAUNCH:-}"
 
 python3 - <<'PY'
-"""Assemble run_meta.json v2 — identity, the §7.1 factors, and the six stamps."""
+"""Assemble run_meta.json v2 — identity, the factors, and the six stamps."""
 import hashlib, json, os, subprocess, sys
 from pathlib import Path
 
@@ -486,11 +505,11 @@ if probe_plan:
     meta["probe_seed_material"] = probe_plan.get("seed_material")
 
 # The counter-prior gate result, carried onto every fact_trace row so no analysis
-# has to go looking for it (STATUS §4.4 "gates and outcome"). trace.py reads both
+# has to go looking for it (STATUS "gates and outcome"). trace.py reads both
 # fields off run_meta; the gate itself ran once per task, at job setup, and its
 # verdict is a property of the fact rather than of this run. Without this copy
 # `prior_check_status` and `control_fire_rate` are null on every row and the
-# weak-fact exclusion (D2) has nothing to key off.
+# weak-fact exclusion has nothing to key off.
 _pc = _json_file(job_dir / ".registry" / "prior_check" / f"{env['TASK_ID']}.json")
 if isinstance(_pc, dict):
     _row = _pc
