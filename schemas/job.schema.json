@@ -11,7 +11,7 @@
   ],
   "allOf": [
     {
-      "description": "A job needs work to do: either a `tasks` list, or the single-task shorthand `task` + `accept`. IMPLEMENTATION.md \u00a78.1 specified this as an if/then; it was left as an unconditional `required: [task, accept]`, so multi-task specs only validated because jobspec._normalize_tasks mirrored task 1 back to the top level. With that mirror correctly removed for multi-task jobs, this clause is what keeps them valid.",
+      "description": "A job needs work to do: either a `tasks` list, or the single-task shorthand `task` + `accept`. This was specified as an if/then; it was left as an unconditional `required: [task, accept]`, so multi-task specs only validated because jobspec._normalize_tasks mirrored task 1 back to the top level. With that mirror correctly removed for multi-task jobs, this clause is what keeps them valid.",
       "if": {
         "not": {
           "required": [
@@ -141,6 +141,19 @@
           "accept": {
             "type": "string",
             "minLength": 1
+          },
+          "criteria_file": {
+            "description": "Path to a FROZEN, hand-authored criteria pack for this task. When present, judge.py installs it verbatim and NEVER calls the model to author one -- but still floor-checks it, and still runs the two-sided proof if `reference_patches` is set. Synthesis is a single unseeded LLM call that produces a different battery every time: two jobs that author their own graders are not comparable to each other, and one of them is usually broken in a way the base-only floor check cannot see. Synthesize once, prove it two-sided once, freeze it, install the identical file everywhere. Relative paths resolve against the job dir first, then the runner's repo root.",
+            "type": "string",
+            "minLength": 1
+          },
+          "reference_patches": {
+            "description": "Paths to git patches, each an INDEPENDENT known-correct solution to this task, used for the OTHER half of the floor check. The base-only floor check establishes 'fails before' and silently ASSUMES 'passes after'; a criterion shaped `exit_code == 0 and <broken expression>` short-circuits on the base tree (the command exits non-zero, the broken half is never evaluated), looks cleanly discriminating, and breaks only once a correct solution makes the command succeed. With reference patches the proof is two-sided: the pristine base must FAIL every new-behaviour criterion and every reference must PASS all of them. Relative paths resolve against the job dir first, then the runner's repo root. Optional -- absent means the proof stays one-sided, and the manifest says so.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
           }
         }
       }
@@ -256,7 +269,7 @@
       ]
     },
     "facts_file": {
-      "description": "v2, wur mode: path to the fact registry (facts.yaml). Minted nonces, detector bindings, and the tier-(b) paraphrase regexes that must be FROZEN BEFORE ANY DATA. The live copy lives at $JOB_DIR/.registry/facts.yaml, mode 700, and must never be reachable from a workspace (V9).",
+      "description": "v2, wur mode: path to the fact registry (facts.yaml). Minted nonces, detector bindings, and the tier-(b) paraphrase regexes that must be FROZEN BEFORE ANY DATA. The live copy lives at $JOB_DIR/.registry/facts.yaml, mode 700, and must never be reachable from a workspace.",
       "type": [
         "string",
         "null"
@@ -361,7 +374,7 @@
       }
     },
     "parallelism": {
-      "description": "v2. Sliding-window concurrency. JOBS <= 4 is verified against a real repo (S3: four worktrees, four isolated CLAUDE_CONFIG_DIRs, all clean); 6 is the untested ceiling. Parallelism is only safe because per-run CLAUDE_CONFIG_DIR + --settings replaced the global ~/.claude/settings.json mutation.",
+      "description": "v2. Sliding-window concurrency. JOBS <= 4 is verified against a real repo (four worktrees, four isolated CLAUDE_CONFIG_DIRs, all clean); 6 is the untested ceiling. Parallelism is only safe because per-run CLAUDE_CONFIG_DIR + --settings replaced the global ~/.claude/settings.json mutation.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -396,8 +409,17 @@
         }
       }
     },
+    "extra_strip": {
+      "description": "Additional paths (relative to the workspace root) removed from EVERY arm before the arm's overlay is applied. Empty by default, so it changes nothing unless set. It exists for jobs whose target is a REAL repository rather than a synthetic fixture: a repo that ships its own README/CONTRIBUTING/AGENTS.md leaves a 'bare' arm carrying orienting context, and leaves a scaffold arm competing with the repo's own contract instead of replacing it. Applied identically to every arm, so it can never become an arm-correlated difference. Whatever is removed is recorded verbatim in run_meta.stripped[].",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "default": []
+    },
     "discovery_regime": {
-      "description": "v2, wur mode. IMPLEMENTATION.md \u00a77.1: whether ANY file in the workspace names the planted file. 'discovery' = nothing points at NOTES.md, so read-rate measures SEARCH. 'routing' = a byte-identical README.md in every arm carries one path line that varies, so read-rate measures whether the agent FOLLOWS a pointer. These are different experiments and are not comparable within one model, so this is a BETWEEN-job factor. Distinct from `pointer_regime`, which is the per-arm CLAUDE.md render mechanism (none|prose|import); the two were conflated under one name in the first cut, which left the \u00a77.1 requirement that this be 'a declared knob, not an accident' unmet.",
+      "description": "v2, wur mode. Whether ANY file in the workspace names the planted file. 'discovery' = nothing points at NOTES.md, so read-rate measures SEARCH. 'routing' = a byte-identical README.md in every arm carries one path line that varies, so read-rate measures whether the agent FOLLOWS a pointer. These are different experiments and are not comparable within one model, so this is a BETWEEN-job factor. Distinct from `pointer_regime`, which is the per-arm CLAUDE.md render mechanism (none|prose|import); the two were conflated under one name in the first cut, which left the \u00a77.1 requirement that this be 'a declared knob, not an accident' unmet.",
       "type": "string",
       "enum": [
         "discovery",

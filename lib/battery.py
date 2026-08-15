@@ -6,7 +6,7 @@ RESPONSIBILITY
   Execute mechanical criteria — a shell command plus a `pass_condition` Python
   expression over (exit_code, stdout) — against one workspace, and report each
   verdict WITHOUT ever inventing one. This is also the execution engine for the
-  WUR `used` detectors (IMPLEMENTATION.md §6.4): a fact detector IS a mechanical
+  WUR `used` detectors: a fact detector IS a mechanical
   criterion, so no second engine exists.
 
 INPUTS
@@ -30,7 +30,7 @@ A criterion:
    "timeout": 300,          # optional per-criterion override of AC_TIMEOUT_DEFAULT
    "output_limit": 20000}   # optional per-criterion stdout cap (default 1000)
 
-FIXES vs. the pre-WUR version (IMPLEMENTATION.md §8.1)
+FIXES vs. the pre-WUR version
   1. A `pass_condition` that raises used to fall back to `exit_code == 0` — a
      VERIFIED SILENT FALSE PASS: a criterion whose expression had a typo scored
      PASS for every run whose command happened to exit 0. It now returns
@@ -96,8 +96,7 @@ def _skipped(reason: str) -> dict:
     }
 
 
-def run_one_full(
-    crit: dict, workspace: Path, timeout: int = AC_TIMEOUT_DEFAULT
+def run_one_full(crit: dict, workspace: Path, timeout: int = AC_TIMEOUT_DEFAULT
 ) -> dict:
     """Execute one criterion and return the full result row.
 
@@ -151,13 +150,11 @@ def run_one_full(
     }
     t0 = time.monotonic()
     try:
-        result = subprocess.run(
-            command, shell=True, cwd=str(workspace),
+        result = subprocess.run(command, shell=True, cwd=str(workspace),
             capture_output=True, text=True, timeout=eff_timeout, env=env,
         )
     except subprocess.TimeoutExpired:
-        row.update(
-            passed=False, output=f"[timeout after {eff_timeout}s]",
+        row.update(passed=False, output=f"[timeout after {eff_timeout}s]",
             status=STATUS_TIMEOUT, timed_out=True,
             error=f"timeout after {eff_timeout}s",
             duration_s=round(time.monotonic() - t0, 3),
@@ -166,8 +163,7 @@ def run_one_full(
     except Exception as e:  # noqa: BLE001
         # The command could not be launched at all. That is a harness fault, not
         # a verdict about the workspace — do not manufacture one.
-        row.update(
-            passed=None, output=f"[error: {e}]", status=STATUS_ERROR,
+        row.update(passed=None, output=f"[error: {e}]", status=STATUS_ERROR,
             error=f"{type(e).__name__}: {e}",
             duration_s=round(time.monotonic() - t0, 3),
         )
@@ -175,30 +171,44 @@ def run_one_full(
 
     stdout = (result.stdout + result.stderr).strip()
     exit_code = result.returncode
-    local_ns = {"exit_code": exit_code, "stdout": stdout, **SAFE_BUILTINS}
+    # ONE namespace, passed as GLOBALS, with no separate locals. A lambda body or a
+    # comprehension/generator expression opens its own scope, and a free name in
+    # that scope resolves through globals — never through the enclosing eval's
+    # locals. Split across two dicts, `str(x)` at top level worked while
+    # `(lambda d: all(...))(x)` and `sum(float(r) for r in...)` raised NameError,
+    # scored the criterion None, and were reported as "undecided" rather than as a
+    # failure. Measured: 3 of 7 criteria on a VERIFIED-CORRECT solution.
+    #
+    # `exit_code` and `stdout` belong here for exactly the same reason, and moving
+    # only the builtins is a HALF fix that reads as a whole one: the shape LLMs
+    # actually write is `(lambda d: exit_code == 0 and...)(json.loads(stdout))`,
+    # where `stdout` is evaluated at the call site (locals, fine) and `exit_code`
+    # inside the lambda (globals, NameError). Measured on a live run: 3 of 7.
+    #
+    # The sandbox is unchanged — __builtins__ is still empty, so __import__, open,
+    # eval and exec remain unreachable from any scope.
+    eval_ns = {"__builtins__": {}, **SAFE_BUILTINS,
+               "exit_code": exit_code, "stdout": stdout}
     try:
-        passed = bool(eval(pass_condition, {"__builtins__": {}}, local_ns))  # noqa: S307
+        passed = bool(eval(pass_condition, eval_ns))  # noqa: S307
     except Exception as e:  # noqa: BLE001
         # DO NOT fall back to `exit_code == 0`. That fallback was a verified
         # silent false PASS: a broken expression scored every exit-0 run as a
         # pass, with the only trace a line appended to output nobody reads.
-        row.update(
-            passed=None,
+        row.update(passed=None,
             output=(stdout + f"\n[pass_condition eval error: {e}]")[:limit],
             exit_code=exit_code, status=STATUS_ERROR,
             error=f"pass_condition eval error: {type(e).__name__}: {e}",
             duration_s=round(time.monotonic() - t0, 3),
         )
         return row
-    row.update(
-        passed=passed, output=stdout[:limit], exit_code=exit_code,
+    row.update(passed=passed, output=stdout[:limit], exit_code=exit_code,
         duration_s=round(time.monotonic() - t0, 3),
-    )
+        )
     return row
 
 
-def run_one(
-    crit: dict, workspace: Path, timeout: int = AC_TIMEOUT_DEFAULT
+def run_one(crit: dict, workspace: Path, timeout: int = AC_TIMEOUT_DEFAULT
 ) -> tuple[bool | None, str]:
     """(passed, output) — the historical shape, preserved for existing callers."""
     row = run_one_full(crit, workspace, timeout)

@@ -19,7 +19,7 @@ TWO THINGS THIS FILE NOW SAYS OUT LOUD
   - `met` is TRI-STATE. The judge stopped coercing "could not be evaluated" to False, so
     ✅ / ❌ / ⚠️ are three different facts and the ⚠️ rows carry their error.
   - Token totals are labelled with `tokens.accounting_version`. A per_line_v1 number is
-    inflated by a run-varying 1.0x-4.9x (V7) and must never be quoted beside a
+    inflated by a run-varying 1.0x-4.9x and must never be quoted beside a
     per_message_v2 one without that caveat attached.
 """
 from __future__ import annotations
@@ -32,7 +32,7 @@ MET_MARK = {True: "✅", False: "❌", None: "⚠️"}
 # V7. Absent means per_line_v1 by construction: the field did not exist before the fix.
 ACCOUNTING_NOTE = {
     "per_message_v2": "per-message (V7-corrected)",
-    "per_line_v1": "per-LINE — INFLATED 1.0×–4.9× (V7), do not compare to corrected runs",
+    "per_line_v1": "per-LINE — INFLATED 1.0×–4.9×, do not compare to corrected runs",
 }
 
 
@@ -71,6 +71,8 @@ def run_report(run_dir: Path) -> Path:
     L.append(f"**Verdict:** {badge}  ·  **Score:** {score_s}  ·  **Model:** {meta.get('agent_id','—')}\n")
     L.append(f"- Repo: `{meta.get('repo_url') or meta.get('repo_path','—')}` @ `{(meta.get('base_repo_sha') or '')[:10]}`")
     L.append(f"- Started: {meta.get('timestamp_start','—')}  ·  Ended: {meta.get('timestamp_end','—')}\n")
+
+
 
     # Criteria table
     L.append("## Acceptance criteria\n")
@@ -135,6 +137,8 @@ def run_report(run_dir: Path) -> Path:
                  f"max tool-uses/message: {ops.get('max_tool_uses_per_message','—')}")
     L.append(f"- Files edited: {', '.join(rec.get('navigation',{}).get('files_edited',[])) or '—'}\n")
 
+
+
     # Artifacts
     L.append("## Artifacts\n")
     L.append(f"- Solution diff: `{run_dir/'git.patch'}`  → apply with `git apply git.patch`")
@@ -183,6 +187,12 @@ def job_report(job_dir: Path) -> Path:
             "output": rec.get("tokens", {}).get("total_output"),
             "accounting": (rec.get("tokens", {}) or {}).get("accounting_version") or "per_line_v1",
             "unevaluable": judge.get("criteria_errored") or 0,
+            # WHICH battery produced this verdict, and whether a re-derivation from
+            # the archive disagrees. Both exist so that "the grader was patched
+            # mid-collection" is a visible fact on the scorecard instead of an
+            # invisible one — that exact situation cost a published claim.
+            "grader_sha": ((judge.get("grader") or {}).get("criteria_sha256") or "")[:12],
+            "regrade": _load(rd / "judge.regrade.json"),
         })
 
     tasks = spec.get("tasks") if isinstance(spec, dict) else None
@@ -202,15 +212,17 @@ def job_report(job_dir: Path) -> Path:
     accts = {r["accounting"] for r in rows}
     if len(accts) > 1:
         L.append(f"> ⚠️ **These runs mix token accounting versions {sorted(accts)}.** "
-                 f"`per_line_v1` totals are inflated by a run-varying 1.0×–4.9× (V7); the "
+                 f"`per_line_v1` totals are inflated by a run-varying 1.0×–4.9×; the "
                  f"token columns below are NOT comparable across those runs.\n")
     elif accts and "per_line_v1" in accts:
         L.append("> ⚠️ Token totals here are `per_line_v1` — inflated by a run-varying "
-                 "1.0×–4.9× (V7). Re-run `telemetry.py` to correct them.\n")
+                 "1.0×–4.9×. Re-run `telemetry.py` to correct them.\n")
         for t in (tasks or []):
             L.append(f"### Task `{t['id']}`\n")
             L.append("```\n" + (t.get("task", "").strip()) + "\n```")
             L.append("_Accepted when:_ " + " ".join((t.get("accept", "").strip()).split()) + "\n")
+
+
 
     # Per-task accepted-rate summary
     if rows:
@@ -284,6 +296,36 @@ def job_report(job_dir: Path) -> Path:
         L.append(line + "\n")
     else:
         L.append("_No runs yet._\n")
+
+    # ── Grader provenance ────────────────────────────────────────────────────
+    # Two questions the scorecard must not leave to trust: was every run scored by
+    # the SAME battery, and does re-deriving a verdict from the archive still agree
+    # with what was recorded at teardown?
+    graded = [r for r in rows if r["grader_sha"]]
+    shas = sorted({r["grader_sha"] for r in graded})
+    drift = [r for r in rows if r["regrade"]
+             and r["regrade"].get("verdict") != r["verdict"]]
+    if len(shas) > 1 or drift:
+        L.append("## ⚠ Grader provenance\n")
+        if len(shas) > 1:
+            L.append(f"**This job's runs were NOT all scored by the same battery** — "
+                     f"{len(shas)} distinct `criteria.json` hashes: `{'`, `'.join(shas)}`. "
+                     f"These verdicts are not comparable to each other. Re-grade every run "
+                     f"from the archive (`judge.py --regrade`) before using them.\n")
+        if drift:
+            L.append(f"**{len(drift)} run(s) re-graded from the archive disagree with the "
+                     f"recorded verdict.** The recorded verdict is what teardown computed "
+                     f"against the live workspace; the re-graded one is what today's battery "
+                     f"computes from `refs/atlas/baseline-run/<id>` + `git.patch`. Neither is "
+                     f"automatically right — decide, then re-grade the whole job to match.\n")
+            L.append(f"| Run | Recorded | Re-graded |")
+            L.append(f"|-----|----------|-----------|")
+            for r in drift:
+                L.append(f"| {r['run']} | {r['verdict']} | {r['regrade'].get('verdict','—')} |")
+            L.append("")
+    elif len(shas) == 1:
+        L.append(f"_Every graded run scored by one battery (`criteria.json` "
+                 f"`{shas[0]}`)._\n")
 
     # Figures (auto-generated into agent-analysis/)
     aa = job_dir / "agent-analysis"

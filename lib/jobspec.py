@@ -85,13 +85,13 @@ WUR_DEFAULTS = {
     },
 }
 
-# ── the §7.1 arm table ───────────────────────────────────────────────────────
+# ── the arm table ───────────────────────────────────────────────────────
 # The design factors of each WUR arm, decomposed so figures, parquet and the shell
 # scripts never have to parse an arm id. This is exactly what run_record
 # condition.factors carries. Deliberately NOT here: the planted file's PATH and its
 # rendered content — those belong to lib/wur/plant.py, which owns the overlay.
 #
-# `ctrl-np` is the §7.2 pilot's 13th arm (the difficulty band is defined on ctrl + no
+# `ctrl-np` is the pilot's 13th arm (the difficulty band is defined on ctrl + no
 # probe), which is why conditions[] is a pattern in the schema and not a closed enum.
 ARM_FACTORS: dict[str, dict] = {
     "d0-push":     {"depth": "d0", "format": "prose",     "channel": "push",    "distractors": 0, "fact_present": True,  "probe": True,  "pointer_regime": "import"},
@@ -182,7 +182,7 @@ def baseline_of(spec: dict) -> str | None:
 
 
 def condition_factors(spec: dict, arm: str) -> dict:
-    """The §7.1 design factors of one arm, with the job-level defaults applied.
+    """The design factors of one arm, with the job-level defaults applied.
 
     Unknown arm ids are not an error: a job may define an arm this table has never heard
     of, and the honest answer is "no factor is known", not a crash in a shell script.
@@ -360,8 +360,7 @@ def _semantic_checks(spec: dict, *, strict: bool = False) -> None:
         elif strict:
             raise ValueError("wur mode needs conditions[]")
         if spec.get("environments"):
-            raise ValueError(
-                "environments[] is a ladder key; a wur job uses conditions[]. "
+            raise ValueError("environments[] is a ladder key; a wur job uses conditions[]. "
                 "context_gen.py raises KeyError on a non-ladder arm and rmtree's a "
                 "hand-authored overlay on a ladder-named one, so the two must not mix.")
         if strict and not (spec.get("facts_file") or "").strip():
@@ -370,8 +369,7 @@ def _semantic_checks(spec: dict, *, strict: bool = False) -> None:
     arms = conditions_of(spec)
     base = spec.get("baseline_condition")
     if isinstance(base, str) and base.strip() and arms and base.strip() not in arms:
-        raise ValueError(
-            f"baseline_condition {base!r} is not one of the arms {arms}. "
+        raise ValueError(f"baseline_condition {base!r} is not one of the arms {arms}. "
             f"A baseline with no runs normalizes every other arm to 0.00x under a label "
             f"claiming 1.00x — figures.py refuses to plot it rather than plotting zeros.")
 
@@ -452,7 +450,7 @@ _INT_KEYS = {
     "parallelism.per_backend.gemini", "parallelism.per_backend.agy",
 }
 _FLOAT_KEYS = {"budget.max_usd"}
-_LIST_KEYS = {"environments", "conditions"}
+_LIST_KEYS = {"environments", "conditions", "extra_strip"}
 
 
 def _coerce(key: str, value: str):
@@ -511,7 +509,7 @@ def cmd_create(args) -> None:
         "experiment": experiment,
     }
 
-    # Two-level model selection (§6.5). --backend/--model land in agent{}; --model alone
+    # Two-level model selection. --backend/--model land in agent{}; --model alone
     # still populates the deprecated top-level `model` so a v1 reader keeps working.
     if args.backend or args.effort:
         ident = None
@@ -555,9 +553,18 @@ def cmd_create(args) -> None:
         loaded = yaml.safe_load(Path(args.tasks_file).read_text())
         if not isinstance(loaded, list) or not loaded:
             raise ValueError("--tasks-file must contain a non-empty YAML/JSON list of {task, accept}")
+        # `criteria_file` and `reference_patches` MUST come through. They are what
+        # make a job's grader frozen and two-sided-proven, and dropping them here
+        # silently downgraded a pack that ships both into a job that synthesizes its
+        # own unproven battery — the exact failure the fields exist to prevent, and
+        # invisible because the job still runs and still reports a verdict.
         spec["tasks"] = [
-            {"id": t.get("id", f"t{i}"), "task": (t.get("task") or "").strip(),
-             "accept": (t.get("accept") or "").strip()}
+            {k: v for k, v in (("id", t.get("id", f"t{i}")),
+                ("task", (t.get("task") or "").strip()),
+                ("accept", (t.get("accept") or "").strip()),
+                ("criteria_file", t.get("criteria_file")),
+                ("reference_patches", list(t.get("reference_patches") or []) or None),
+) if v is not None}
             for i, t in enumerate(loaded, 1)
         ]
         spec.pop("task", None)
@@ -615,7 +622,7 @@ def cmd_conditions(args) -> None:
 
 
 def cmd_condition_field(args) -> None:
-    """One §7.1 design factor of one arm. `--all` prints the whole factor object as JSON."""
+    """One design factor of one arm. `--all` prints the whole factor object as JSON."""
     spec = load(Path(args.job_dir))
     factors = condition_factors(spec, args.condition)
     if args.all or args.key in (None, ""):
@@ -706,7 +713,7 @@ def main() -> None:
     cl.add_argument("job_dir")
     cl.set_defaults(func=cmd_conditions)
 
-    cf = sub.add_parser("condition-field", help="one §7.1 design factor of one arm")
+    cf = sub.add_parser("condition-field", help="one design factor of one arm")
     cf.add_argument("job_dir")
     cf.add_argument("condition")
     cf.add_argument("key", nargs="?")
