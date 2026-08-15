@@ -20,27 +20,27 @@ OUTPUTS  unittest results on stderr; exit 0 iff every invariant holds.
 WHAT EACH TEST DEFENDS, AND WHY IT IS LOAD-BEARING
   scan-before-truncate   events.py replaces region text with a digest. If it
       ever runs before exposure.py, a nonce past the digest boundary scores
-      `read = 0` for a fact the model was demonstrably shown. §6.1.
+      `read = 0` for a fact the model was demonstrably shown.
   hook never blocks      gate.py runs inside a synchronous PreToolUse hook.
       Non-zero exit, stdout that is not one JSON object, or ANY stderr changes
       the agent — and the watcher's whole contract is "observe everything,
-      change nothing". §5.1(1).
+      change nothing"..
   global settings untouched  the pre-WUR harness merged hooks into the global
       ~/.claude/settings.json. That is what forced JOBS=1 and what makes a
-      crashed run poison the next one. §6.5.
+      crashed run poison the next one.
   reconcile idempotent   derivation must be re-runnable months later after a
-      scanner bugfix, over the same raw bytes, to the same output. §6.1.
+      scanner bugfix, over the same raw bytes, to the same output.
   channel enum closed    an unmapped model-visible region must surface as
       `unknown_visible` and fail CI, never be silently dropped — a dropped
-      channel is an invisible exposure path and reads as "not read". §4.2.2.
+      channel is an invisible exposure path and reads as "not read".
   join coverage          stream <-> gate join integrity; a pilot gate at 0.99.
   D4 fields              read / read_inbound_only / unexplained_possession are
-      three different questions. Folding thinking into `read` (D4) mutes the
+      three different questions. Folding thinking into `read` mutes the
       confabulation alarm; unexplained_possession is the compensating check,
-      and if it stops firing the alarm is gone with no other trace. §4.2.1.
+      and if it stops firing the alarm is gone with no other trace.
   d0-push seq nulls      auto-loaded content appears in NO log, so its
       exposure is asserted, not measured. A non-null seq means something
-      scanned a channel it cannot legitimately see. trace.py must RAISE. §4.2.2.
+      scanned a channel it cannot legitimately see. trace.py must RAISE.
 
 CLI
   python3 tests/test_wur_lib.py [-v]        (stdlib unittest; no pytest needed)
@@ -48,8 +48,7 @@ CLI
 from __future__ import annotations
 
 import json
-import os
-import shutil
+import re
 import subprocess
 import sys
 import tempfile
@@ -61,9 +60,12 @@ LIB = ROOT / "lib"
 sys.path.insert(0, str(LIB))
 sys.path.insert(0, str(LIB / "wur"))
 
-import events as events_mod          # noqa: E402
+import aggregate as aggregate_mod    # noqa: E402
 import exposure as exposure_mod      # noqa: E402
+import facts as facts_mod            # noqa: E402
 import gate as gate_mod              # noqa: E402
+import pilot_triage as pilot_triage_mod  # noqa: E402
+import plant as plant_mod            # noqa: E402
 import protocol as protocol_mod      # noqa: E402
 import reconcile as reconcile_mod    # noqa: E402
 import regions as regions_mod        # noqa: E402
@@ -143,7 +145,7 @@ def minimal_run_dir(tmp: Path, *, nonce: str = NONCE, arm: str = "d2",
 
 # ── 1. scan before truncate ──────────────────────────────────────────────────
 class ScanBeforeTruncate(unittest.TestCase):
-    """§6.1: exposure.py scans full region text; events.py digests afterwards."""
+    """: exposure.py scans full region text; events.py digests afterwards."""
 
     def test_full_text_is_scanned_and_nonce_found(self):
         rs = regions_mod.RegionSet(regions=[region(1, "tool_read", "x" * 5000 + NONCE)])
@@ -179,11 +181,10 @@ class ScanBeforeTruncate(unittest.TestCase):
 
 # ── 2. the hook never blocks and always exits 0 ──────────────────────────────
 class HookNeverBlocks(unittest.TestCase):
-    """§5.1(1): hooks exit 0, print exactly {}, and write nothing to stderr."""
+    """: hooks exit 0, print exactly {}, and write nothing to stderr."""
 
     def _run_gate(self, payload: str, run_dir: Path, extra=(), timeout=30):
-        p = subprocess.run(
-            [sys.executable, str(GATE_PY), "pre", "--run-dir", str(run_dir),
+        p = subprocess.run([sys.executable, str(GATE_PY), "pre", "--run-dir", str(run_dir),
              "--timeout-ms", "300", "--poll-ms", "5", *extra],
             input=payload, capture_output=True, text=True, timeout=timeout)
         return p
@@ -241,7 +242,7 @@ class HookNeverBlocks(unittest.TestCase):
 
 # ── 3. the global ~/.claude/settings.json is untouched ───────────────────────
 class GlobalSettingsUntouched(unittest.TestCase):
-    """§6.5: per-run CLAUDE_CONFIG_DIR + --settings replaced the global mutation."""
+    """: per-run CLAUDE_CONFIG_DIR + --settings replaced the global mutation."""
 
     def test_no_script_writes_the_global_settings_file(self):
         offenders = []
@@ -264,7 +265,7 @@ class GlobalSettingsUntouched(unittest.TestCase):
                                                               require_barrier=True), [])
 
     def test_rendered_hook_timeout_is_positive_and_outlives_the_barrier(self):
-        """A hook entry with timeout 0 registers NO hooks at all and no error (V12)."""
+        """A hook entry with timeout 0 registers NO hooks at all and no error."""
         with tempfile.TemporaryDirectory() as td:
             rd = Path(td) / "run"
             rd.mkdir()
@@ -290,7 +291,7 @@ class GlobalSettingsUntouched(unittest.TestCase):
 
 # ── 4. reconcile is idempotent ───────────────────────────────────────────────
 class ReconcileIdempotent(unittest.TestCase):
-    """§6.1: safe to re-run months later, over the same raw bytes."""
+    """: safe to re-run months later, over the same raw bytes."""
 
     def _hashes(self, rd: Path) -> dict:
         import hashlib
@@ -327,7 +328,7 @@ class ReconcileIdempotent(unittest.TestCase):
 
 # ── 5. the channel enum is closed ────────────────────────────────────────────
 class ChannelEnumClosed(unittest.TestCase):
-    """§4.2.2: an unmapped model-visible region is `unknown_visible` and fails CI."""
+    """: an unmapped model-visible region is `unknown_visible` and fails CI."""
 
     def test_every_declared_channel_is_known(self):
         for name in regions_mod.CHANNELS:
@@ -346,6 +347,8 @@ class ChannelEnumClosed(unittest.TestCase):
         blob = json.dumps(schema)
         missing = [c for c in regions_mod.CHANNELS if f'"{c}"' not in blob]
         self.assertEqual(missing, [], "channels known to regions.py but absent from the schema")
+
+
 
     def test_unknown_visible_is_itself_a_declared_channel(self):
         """regions.py maps anything it cannot classify to `unknown_visible` (FAILS CI)."""
@@ -376,7 +379,7 @@ class ChannelEnumClosed(unittest.TestCase):
 
 # ── 6. join coverage ─────────────────────────────────────────────────────────
 class JoinCoverage(unittest.TestCase):
-    """§6.1 / §10: stream <-> gate join on tool_use_id, gate at 0.99."""
+    """ /: stream <-> gate join on tool_use_id, gate at 0.99."""
 
     def test_perfect_join_on_a_clean_run(self):
         with tempfile.TemporaryDirectory() as td:
@@ -417,7 +420,7 @@ class JoinCoverage(unittest.TestCase):
 
 # ── 7. the D4 fields ─────────────────────────────────────────────────────────
 class D4Fields(unittest.TestCase):
-    """§4.2.1: read (primary) vs read_inbound_only vs unexplained_possession."""
+    """: read (primary) vs read_inbound_only vs unexplained_possession."""
 
     def _row(self, tmp: Path, exposure_rows: list[dict], *, arm="d2") -> dict:
         rd = minimal_run_dir(tmp, arm=arm, with_nonce_in_read=False)
@@ -474,7 +477,7 @@ class D4Fields(unittest.TestCase):
         self.assertIn("probe_answer", trace_mod.ECHO_CHANNELS)
 
     def test_only_exact_inbound_hits_set_the_strict_first_exposure(self):
-        """§4.5: a lowercased nonce in a tool result is the agent's own prior text.
+        """: a lowercased nonce in a tool result is the agent's own prior text.
 
         The STRICT value lives in extra.first_inbound_exact_seq. The emitted
         first_exposure_seq deliberately falls back to the first read-counting hit
@@ -486,7 +489,7 @@ class D4Fields(unittest.TestCase):
             r = self._row(Path(td), [self._ex(3, "tool_read", inbound=True, form="lower")])
             extra = r.get("extra") or {}
             self.assertIsNone(extra.get("first_inbound_exact_seq"),
-                              "a non-exact hit must not set the strict §4.5 value")
+                              "a non-exact hit must not set the strict value")
             self.assertEqual(r["first_exposure_seq"], 3)
             self.assertNotEqual(extra.get("first_exposure_rule"), "inbound_exact")
 
@@ -500,7 +503,7 @@ class D4Fields(unittest.TestCase):
 
 # ── 8. d0-push seq fields are null, and trace.py raises if not ───────────────
 class D0PushAsserted(unittest.TestCase):
-    """§4.2.2: auto-loaded content is in NO log; exposure_basis = manifest_canary."""
+    """: auto-loaded content is in NO log; exposure_basis = manifest_canary."""
 
     def test_d0_push_row_is_asserted_with_null_seq_fields(self):
         with tempfile.TemporaryDirectory() as td:
@@ -531,7 +534,7 @@ class D0PushAsserted(unittest.TestCase):
 
 # ── 9. D1: one fact_trace row per run ────────────────────────────────────────
 class OneRowPerRun(unittest.TestCase):
-    """D1 / STATUS §7: one fact per task means one fact_trace row per run.
+    """D1 / STATUS: one fact per task means one fact_trace row per run.
 
     A registry spans every task in the job. Emitting a row per REGISTRY fact
     marks the other tasks' facts `available` in a workspace where they were
@@ -564,7 +567,7 @@ class OneRowPerRun(unittest.TestCase):
 
 # ── 10. the frozen protocol ──────────────────────────────────────────────────
 class FrozenProtocol(unittest.TestCase):
-    """§5.1(6): a silent edit must invalidate cross-run comparison loudly."""
+    """: a silent edit must invalidate cross-run comparison loudly."""
 
     def test_pacing_prompt_matches_the_measured_hash(self):
         self.assertEqual(protocol_mod.sha256(protocol_mod.PACING_PROMPT),
@@ -593,6 +596,176 @@ class FrozenProtocol(unittest.TestCase):
             got = trace_mod.load_use_detect(rd, "f1")
             self.assertTrue(got["eligible"])
             self.assertTrue(got["fired"])
+
+
+class OrthogonalityIsComputedNotLeftNull(unittest.TestCase):
+    """`phi_used_success` must be filled, and must agree with the gate.
+
+    phi(used, success) is a property of a TASK across its runs; trace.py sees one run
+    at a time, wrote `null`, and nothing ever filled it in. A schema field that is
+    permanently null reads as "no correlation was found" rather than "nobody computed
+    one" — the same shape of problem as the constant `success` column below. It also
+    could not have been computed before that fix: with `success` constant, one margin
+    of the 2x2 is degenerate and phi is undefined by construction.
+    """
+
+    def test_the_rollup_and_the_gate_use_the_same_rule(self):
+        cases = [
+            [(True, True), (False, False)],                                  # perfect
+            [(True, True), (True, False), (False, True), (False, False)],    # none
+            [(True, True), (True, True)],                                    # degenerate
+            [(True, False)],                                                 # too few
+            [],
+        ]
+        for pairs in cases:
+            with self.subTest(pairs=pairs):
+                self.assertEqual(aggregate_mod._phi_2x2(pairs), pilot_triage_mod._phi(pairs))
+
+    def test_a_degenerate_margin_is_none_never_zero(self):
+        """An undefined correlation is not an uncorrelated one. Reading it as 0.0
+        would silently PASS the gate on a dataset that cannot inform it."""
+        self.assertIsNone(aggregate_mod._phi_2x2([(True, True), (True, True)]))
+        self.assertIsNone(aggregate_mod._phi_2x2([(True, False), (False, False)] * 0 + []))
+
+    def test_backfill_fills_every_row_per_task(self):
+        rows = [
+            {"task_id": "t1", "used": True,  "success": True},
+            {"task_id": "t1", "used": False, "success": False},
+            {"task_id": "t2", "used": True,  "success": False},
+            {"task_id": "t2", "used": True,  "success": False},
+        ]
+        aggregate_mod.backfill_orthogonality(rows)
+        self.assertEqual(rows[0]["phi_used_success"], 1.0)
+        self.assertEqual(rows[1]["phi_used_success"], 1.0)
+        # t2 has no variance in either column -> undefined, not 0.0
+        self.assertIsNone(rows[2]["phi_used_success"])
+        self.assertIsNone(rows[3]["phi_used_success"])
+
+    def test_a_constant_success_column_yields_undefined_not_a_pass(self):
+        """The state the harness was actually in: success false on every row."""
+        rows = [{"task_id": "t", "used": u, "success": False, "analyzable": True}
+                for u in (True, False, True, False)]
+        aggregate_mod.backfill_orthogonality(rows)
+        self.assertTrue(all(r["phi_used_success"] is None for r in rows))
+        # pilot_triage takes runs, each carrying its fact_trace rows.
+        gate = pilot_triage_mod.gate_orthogonality([{"fact_trace": [r]} for r in rows])
+        self.assertIsNone(gate.value, "phi is undefined when a margin is degenerate")
+        self.assertNotEqual(gate.status, "pass",
+                            "a gate must not PASS on a dataset that cannot inform it")
+
+    def test_the_gate_does_compute_once_success_varies(self):
+        """And the flip side: with a real spread it produces a number."""
+        rows = [{"task_id": "t", "used": u, "success": s, "analyzable": True}
+                for u, s in [(True, True), (False, False), (True, False), (False, True)]]
+        aggregate_mod.backfill_orthogonality(rows)
+        self.assertIsNotNone(rows[0]["phi_used_success"])
+        gate = pilot_triage_mod.gate_orthogonality([{"fact_trace": [r]} for r in rows])
+        self.assertIsNotNone(gate.value)
+
+
+class SuccessSpeaksJudgesVocabulary(unittest.TestCase):
+    """`fact_trace.success` must be able to be True.
+
+    `_success_of` matched ("pass", "passed", "success", "ok"). judge.py emits exactly
+    {accepted, partial, rejected, error, timeout}. The two vocabularies were DISJOINT,
+    so `success` was False on every row of every run — including runs the battery had
+    certified `accepted`. A constant is not a measurement: the orthogonality gate
+    |phi(used, success)| has zero variance in one variable and cannot be computed, and
+    every "did the context help completion?" number reads zero. Like the probe_key
+    regexes, it presents as a finding rather than as a bug.
+    """
+
+    #: Kept in lockstep with judge.py deliberately — if judge grows a verdict, this
+    #: test fails until _success_of is taught what it means.
+    JUDGE_VERDICTS = ("accepted", "partial", "rejected", "error", "timeout")
+
+    def test_judge_py_emits_exactly_these_verdicts(self):
+        src = (ROOT / "lib" / "judge.py").read_text()
+        emitted = set(re.findall(r'verdict = "(\w+)"', src))
+        self.assertEqual(emitted, set(self.JUDGE_VERDICTS),
+                         "judge.py's verdict vocabulary changed; teach _success_of the new one")
+
+    def test_accepted_is_true(self):
+        self.assertIs(trace_mod._success_of({"verdict": "accepted", "criteria_errored": 0}), True)
+
+    def test_every_judge_verdict_is_understood(self):
+        for v in self.JUDGE_VERDICTS:
+            with self.subTest(verdict=v):
+                got = trace_mod._success_of({"verdict": v, "criteria_errored": 0})
+                self.assertIn(got, (True, False, None))
+        #...and at least one of them can be True, which is the whole point.
+        self.assertTrue(any(trace_mod._success_of({"verdict": v, "criteria_errored": 0}) is True
+                            for v in self.JUDGE_VERDICTS))
+
+    def test_a_half_broken_battery_is_undecided_not_a_failure(self):
+        """`partial` with unevaluable criteria means the battery did not finish
+        deciding. Folding that into False reports a broken grader as a failed
+        solution."""
+        self.assertIsNone(trace_mod._success_of({"verdict": "partial", "criteria_errored": 3}))
+        self.assertIs(trace_mod._success_of({"verdict": "partial", "criteria_errored": 0}), False)
+
+    def test_unknown_verdict_is_none_never_false(self):
+        self.assertIsNone(trace_mod._success_of({"verdict": "banana"}))
+        self.assertIsNone(trace_mod._success_of({}))
+
+    def test_a_foreign_grader_still_resolves(self):
+        self.assertIs(trace_mod._success_of({"verdict": "pass"}), True)
+        self.assertIs(trace_mod._success_of({"success": True}), True)
+
+
+# ── 11. the index reconcile actually reads ───────────────────────────────────
+class ProbeKeyCarriesEveryMatcher(unittest.TestCase):
+    """`_index/probe_key.json` is what teardown hands reconcile, BEFORE facts.yaml.
+
+    It has to be first: the per-arm planted path is knowledge only the plant has.
+    So a matcher missing from that file is missing from every measurement, on every
+    run, with no error anywhere.
+
+    `paraphrase_regexes` was the field left out. Tier (a) is the literal nonce,
+    which an agent restating a constraint in its own words never emits, and tier
+    (c) (LLM adjudication) is not wired — so tier (b) is the ONLY live matcher for
+    a mention. Without it `ever_mention`, `first_mention_seq`, `mention_run_length`,
+    `n_reinjections` and `slot_precision` come back empty and `retention_censored`
+    comes back true for every arm: a structural zero on `retained`, one of the four
+    boundaries in available -> read -> used -> retained. It reads as a finding, not
+    as a bug, which is why it needs a test rather than a comment.
+    """
+
+    def _fact(self):
+        return facts_mod.FactSpec(fact_id="f1", task_id="t1", bucket="constraint",
+            title="T", gist="g", statement="s",
+            nonce="ZQ-ABCDEFGH",
+            surface_forms=("vendored module",),
+            paraphrase_regexes=(r"reports\.py\s+is\s+vendored", r"do not edit.* reports\.py"),
+)
+
+    def test_regexes_survive_the_round_trip_into_a_fact_card(self):
+        fact = self._fact()
+        entry = plant_mod.probe_key_entry(fact, {"d2": "docs/NOTES.md", "ctrl": None})
+        card = exposure_mod.load_fact_cards({"f1": entry})[0]
+        self.assertEqual(card.nonce, fact.nonce)
+        self.assertEqual(tuple(card.regexes), fact.paraphrase_regexes,
+                         "probe_key.json dropped the tier-(b) matchers")
+        self.assertEqual(tuple(card.surface_forms), fact.surface_forms)
+
+    def test_the_index_card_matches_the_registry_card(self):
+        """Both carriers must produce the SAME card: reconciling one run's bytes
+        against facts.yaml and against probe_key.json cannot give two answers."""
+        fact = self._fact()
+        from_index = exposure_mod.load_fact_cards({"f1": plant_mod.probe_key_entry(fact, {"d2": "docs/NOTES.md"})})[0]
+        from_registry = exposure_mod.load_fact_cards({"f1": fact.to_dict()})[0]
+        for attr in ("nonce", "surface_forms", "regexes"):
+            self.assertEqual(getattr(from_index, attr), getattr(from_registry, attr), attr)
+
+    def test_a_paraphrase_actually_matches_through_the_index_card(self):
+        """End of the chain: the slot matcher must fire on a paraphrase."""
+        fact = self._fact()
+        card = exposure_mod.load_fact_cards({"f1": plant_mod.probe_key_entry(fact, {"d2": "docs/NOTES.md"})})[0]
+        slot = {"fact": "ledgerline/reports.py is vendored and must not be edited",
+                "source": "NOTES.md", "affects_next_action": True}
+        m = protocol_mod.match_slot(slot, card)
+        self.assertTrue(m["match_regex"], "tier-(b) paraphrase match did not fire")
+        self.assertFalse(m["match_nonce"], "the agent did not emit the nonce, and should not have to")
 
 
 if __name__ == "__main__":

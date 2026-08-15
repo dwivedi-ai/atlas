@@ -2,14 +2,14 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "events.schema.json",
   "title": "WurEvent",
-  "description": "One row of $RUN_DIR/events.jsonl (STATUS.md §4.1): the join of stream.jsonl with gate/tool_calls.jsonl on tool_use_id, produced by lib/wur/events.py. join_coverage >= 0.99 is a pilot gate. Written one JSON object per line; validate line by line. Two rules bind every producer: (1) counting must group by message_id, never by stream line — stream.jsonl splits one assistant message across lines exactly like the on-disk transcript (V17), so a per-line count inherits the V7 double-count bug; (2) result_digest is computed only AFTER nonce scanning (§6.1), never before.",
+  "description": "One row of $RUN_DIR/events.jsonl: the join of stream.jsonl with gate/tool_calls.jsonl on tool_use_id, produced by lib/wur/events.py. join_coverage >= 0.99 is a pilot gate. Written one JSON object per line; validate line by line. Two rules bind every producer: (1) counting must group by message_id, never by stream line — stream.jsonl splits one assistant message across lines exactly like the on-disk transcript, so a per-line count inherits the V7 double-count bug; (2) result_digest is computed only AFTER nonce scanning, never before.",
   "type": "object",
   "required": ["schema_version", "run_id", "seq", "type", "is_probe_turn"],
   "additionalProperties": false,
 
   "$defs": {
     "channel": {
-      "description": "The closed channel enum of IMPLEMENTATION.md §4.2.2. attachment_<type> is a family keyed by the transcript's attachment.attachment.type. regions.py emits unknown_visible for any model-visible region it cannot map, and unknown_visible FAILS CI — the enum is not allowed to drift silently. Duplicated verbatim in fact_trace.schema.json; the two must stay in sync.",
+      "description": "The closed channel enum. attachment_<type> is a family keyed by the transcript's attachment.attachment.type. regions.py emits unknown_visible for any model-visible region it cannot map, and unknown_visible FAILS CI — the enum is not allowed to drift silently. Duplicated verbatim in fact_trace.schema.json; the two must stay in sync.",
       "anyOf": [
         {
           "type": "string",
@@ -39,7 +39,7 @@
       ]
     },
     "match_form": {
-      "description": "How the nonce matched. Only `exact` inbound hits set first_exposure_seq (§4.5): a lowercased or hyphen-stripped nonce in a tool result is almost certainly the agent's own prior text being re-read.",
+      "description": "How the nonce matched. Only `exact` inbound hits set first_exposure_seq: a lowercased or hyphen-stripped nonce in a tool result is almost certainly the agent's own prior text being re-read.",
       "type": "string",
       "enum": ["exact", "lower", "nohyphen", "regex"]
     }
@@ -49,16 +49,16 @@
     "schema_version": { "type": "string", "const": "1" },
     "run_id":  { "type": "string", "pattern": "^[a-zA-Z0-9._-]+$" },
     "seq":     { "type": "integer", "minimum": 0, "description": "Monotonic index over the run's ordered events. The ordering invariant first_exposure_seq < first_mention_seq is checked in these units." },
-    "ts":      { "type": ["string", "null"], "description": "ISO-8601 where the backend supplies one; null otherwise (STATUS.md §4.1)." },
+    "ts":      { "type": ["string", "null"], "description": "ISO-8601 where the backend supplies one; null otherwise." },
     "turn_idx": { "type": ["integer", "null"], "minimum": 0 },
 
     "type": {
-      "description": "STATUS.md §4.1 names assistant/tool_use/tool_result/probe_in/probe_out/hook. Three additive values carry stream records that have no other home: harness_in (a non-probe stdin injection, i.e. RESUME_TEXT), system_init (the system/init event whose canonicalized hash is init_sha256), and result (the terminal event whose usage totals must equal the message_id-deduped totals).",
+      "description": "The base set is assistant/tool_use/tool_result/probe_in/probe_out/hook. Three additive values carry stream records that have no other home: harness_in (a non-probe stdin injection, i.e. RESUME_TEXT), system_init (the system/init event whose canonicalized hash is init_sha256), and result (the terminal event whose usage totals must equal the message_id-deduped totals).",
       "type": "string",
       "enum": ["assistant", "tool_use", "tool_result", "probe_in", "probe_out", "harness_in", "hook", "system_init", "result"]
     },
     "source": {
-      "description": "Which raw artifact this row was derived from. transcript.jsonl is load-bearing, not a convenience copy: it is the ONLY source of truncation information (V16).",
+      "description": "Which raw artifact this row was derived from. transcript.jsonl is load-bearing, not a convenience copy: it is the ONLY source of truncation information.",
       "type": "string",
       "enum": ["stream", "transcript", "gate", "driver"]
     },
@@ -68,11 +68,11 @@
       "type": ["string", "null"]
     },
     "tool_use_id": {
-      "description": "The stream<->gate join key. Gate ordinals are NOT tool-call ordinals: a denied call costs two barrier fires (V14), so de-duplicate gate/tool_calls.jsonl by this field.",
+      "description": "The stream<->gate join key. Gate ordinals are NOT tool-call ordinals: a denied call costs two barrier fires, so de-duplicate gate/tool_calls.jsonl by this field.",
       "type": ["string", "null"]
     },
     "parent_tool_use_id": {
-      "description": "Set means a sidechain call; impossible with --tools (V10) and stamped probe_integrity: \"sidechain_barrier\" if seen.",
+      "description": "Set means a sidechain call; impossible with --tools and stamped probe_integrity: \"sidechain_barrier\" if seen.",
       "type": ["string", "null"]
     },
     "join_status": {
@@ -82,7 +82,7 @@
     },
 
     "is_probe_turn": {
-      "description": "THE field that keeps the instrument out of the measurement — probe turns are excluded from tool counts, phase splits and nav entropy. Keyed off the replayed probe_id TEXT, never off position: the probe is replayed as a user block immediately AFTER the barriered call's tool_result (§6.2).",
+      "description": "THE field that keeps the instrument out of the measurement — probe turns are excluded from tool counts, phase splits and nav entropy. Keyed off the replayed probe_id TEXT, never off position: the probe is replayed as a user block immediately AFTER the barriered call's tool_result.",
       "type": "boolean"
     },
     "probe_id": {
@@ -97,11 +97,11 @@
 
     "tool":       { "type": ["string", "null"], "description": "Tool name, one of the frozen six (Bash, Read, Write, Edit, Glob, Grep)." },
     "tool_input": { "type": ["object", "null"], "description": "Verbatim tool input as the barrier saw it." },
-    "barrier":    { "type": ["integer", "null"], "minimum": 0, "description": "Ordinal of the PreToolUse barrier fire from gate/tool_calls.jsonl. Not a tool-call ordinal (V14)." },
+    "barrier":    { "type": ["integer", "null"], "minimum": 0, "description": "Ordinal of the PreToolUse barrier fire from gate/tool_calls.jsonl. Not a tool-call ordinal." },
 
-    "result_digest": { "type": ["string", "null"], "description": "Digest of the tool result, computed AFTER nonce scanning (§6.1 scan-before-truncate)." },
+    "result_digest": { "type": ["string", "null"], "description": "Digest of the tool result, computed AFTER nonce scanning (scan-before-truncate)." },
     "result_bytes":  { "type": ["integer", "null"], "minimum": 0 },
-    "is_error":      { "type": ["boolean", "null"], "description": "tool_result.is_error. True with no content and no sidecar is the 256 KB Read ceiling (V16) -> read_error, not a tool_read region." },
+    "is_error":      { "type": ["boolean", "null"], "description": "tool_result.is_error. True with no content and no sidecar is the 256 KB Read ceiling -> read_error, not a tool_read region." },
 
     "nonce_hits": {
       "description": "Every fact nonce found in this event's model-visible regions. Empty array, never null, when nothing matched.",
@@ -115,7 +115,7 @@
           "channel":       { "$ref": "#/$defs/channel" },
           "offset":        { "type": "integer", "minimum": 0, "description": "Byte offset of the hit within the region." },
           "match_form":    { "$ref": "#/$defs/match_form" },
-          "model_visible": { "type": ["boolean", "null"], "description": "Fixed per channel. False regions (sidecar_only, persisted_output_ondisk) are diagnostic and NEVER count as exposure (V6)." },
+          "model_visible": { "type": ["boolean", "null"], "description": "Fixed per channel. False regions (sidecar_only, persisted_output_ondisk) are diagnostic and NEVER count as exposure." },
           "inbound":       { "type": ["boolean", "null"], "description": "Fixed per channel. self_thinking is model-visible but NOT inbound — it is the D4 carve-out that sets read while leaving read_inbound_only alone." },
           "bytes_before":  { "type": ["integer", "null"], "minimum": 0, "description": "Context position at the moment of exposure." }
         }
@@ -123,7 +123,7 @@
     },
 
     "truncated_by_cli": {
-      "description": "The CLI elided content before the model saw it. Triggers: a <persisted-output> prefix, a persistedOutputPath sidecar, or file.numLines < file.totalLines SOURCED FROM transcript.jsonl. toolUseResult.file.truncated is None on every read and is NOT a trigger (V16). stream.jsonl carries zero truncation information.",
+      "description": "The CLI elided content before the model saw it. Triggers: a <persisted-output> prefix, a persistedOutputPath sidecar, or file.numLines < file.totalLines SOURCED FROM transcript.jsonl. toolUseResult.file.truncated is None on every read and is NOT a trigger. stream.jsonl carries zero truncation information.",
       "type": "boolean"
     },
     "truncation_source": {
@@ -131,7 +131,7 @@
       "enum": ["persisted_output_prefix", "persisted_output_path", "numlines_lt_totallines", "read_error_256kb", null]
     },
 
-    "tokens_in":  { "type": ["integer", "null"], "minimum": 0, "description": "Deduped by message_id — carry usage on the FIRST row of a message_id group and null on the rest, or sum inflates 1.0x-4.9x (V7)." },
+    "tokens_in":  { "type": ["integer", "null"], "minimum": 0, "description": "Deduped by message_id — carry usage on the FIRST row of a message_id group and null on the rest, or sum inflates 1.0x-4.9x." },
     "tokens_out": { "type": ["integer", "null"], "minimum": 0 },
 
     "extra": {

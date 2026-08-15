@@ -5,11 +5,11 @@ regions.py — model-visible region extraction against the CLOSED channel enum.
 RESPONSIBILITY
   Turn the two raw transcripts of a run into an ordered list of *regions*: spans
   of text that provably entered the model's context window, each tagged with one
-  member of the closed 18-channel enum of IMPLEMENTATION.md §4.2.2. Nothing in
+  member of the closed 18-channel enum of  Nothing in
   this module scans for a nonce, decides `read`, or writes a derived table — it
   only says "these bytes, on this channel, at this position".
 
-  "Model-visible" is the load-bearing word (§4.2, V6). A nonce that exists only
+  "Model-visible" is the load-bearing word. A nonce that exists only
   in a sidecar field, a hook payload, or a persistedOutputPath file on disk was
   never in the context window; scanning those manufactures exposure. So this
   module NEVER reads hook payloads, never reads watch/persisted/* content, and
@@ -20,7 +20,7 @@ RESPONSIBILITY
 INPUTS
   $RUN_DIR/stream.jsonl      verbatim child stdout (may be .gz) — PRIMARY
   $RUN_DIR/transcript.jsonl  the on-disk session file, copied by --session-id.
-                             LOAD-BEARING, not a convenience copy (V16): it is
+                             LOAD-BEARING, not a convenience copy: it is
                              the only source of truncation information, and the
                              only source of `attachment` blocks and isSidechain.
 
@@ -32,7 +32,7 @@ OUTPUTS
   RegionSet(records, regions, signals, unknown_visible, meta)
     records         canonical ordered StreamRecord list — `seq` is assigned HERE
                     and every downstream table (events/exposure/trace) uses it,
-                    which is what makes the §4.2.2 ordering invariant
+                    which is what makes the ordering invariant
                     first_exposure_seq < first_mention_seq comparable at all.
     regions         Region rows, in seq order, with cumulative bytes_before.
     signals         per-tool_use_id truncation / read_error / sidecar facts,
@@ -63,7 +63,7 @@ except ImportError:  # flat context (lib/wur on sys.path, or run as a script)
     import protocol  # type: ignore
 
 
-# ── the closed channel enum (IMPLEMENTATION.md §4.2.2) ───────────────────────
+# ── the closed channel enum ───────────────────────
 @dataclass(frozen=True)
 class ChannelSpec:
     """Fixed properties of one channel. `inbound` and `model_visible` are
@@ -81,6 +81,8 @@ class ChannelSpec:
 
 def _c(name: str, mv: bool, inb: bool, read: bool, note: str = "") -> ChannelSpec:
     return ChannelSpec(name=name, model_visible=mv, inbound=inb, counts_toward_read=read, note=note)
+
+
 
 
 CHANNELS: dict[str, ChannelSpec] = {
@@ -107,7 +109,7 @@ CHANNELS: dict[str, ChannelSpec] = {
         # ── the CI tripwire ──
         _c("unknown_visible", True, True, True, "any model-visible region not mapped above; FAILS CI"),
         # ── not in context: diagnostic only, emitted with EMPTY text ──
-        _c("sidecar_only", False, False, False, "hook/transcript sidecar bytes the model never saw (V6)"),
+        _c("sidecar_only", False, False, False, "hook/transcript sidecar bytes the model never saw"),
         _c("persisted_output_ondisk", False, False, False, "persistedOutputPath file; never read by this module"),
     )
 }
@@ -130,7 +132,9 @@ _PERSISTED_RE = re.compile(r"<persisted-output\b[^>]*>(.*?)</persisted-output>",
 _PERSISTED_OPEN_RE = re.compile(r"<persisted-output\b", re.IGNORECASE)
 _SYSTEM_REMINDER_RE = re.compile(r"<system-reminder>(.*?)</system-reminder>", re.DOTALL | re.IGNORECASE)
 
-#: The frozen six (V10). A tool_result from anything else is a real drift, not noise.
+
+
+#: The frozen six. A tool_result from anything else is a real drift, not noise.
 FROZEN_TOOLS = ("Bash", "Read", "Write", "Edit", "Glob", "Grep")
 
 # Distinctive fixed substrings of the frozen harness texts, derived from
@@ -146,7 +150,7 @@ def channel_spec(channel: str) -> ChannelSpec:
         return CHANNELS[channel]
     if _ATTACHMENT_RE.match(channel or ""):
         return _c(channel, True, True, True, "transcript attachment.attachment.type")
-    raise KeyError(f"channel not in the closed enum (§4.2.2): {channel!r}")
+    raise KeyError(f"channel not in the closed enum: {channel!r}")
 
 
 def is_valid_channel(channel: str) -> bool:
@@ -224,7 +228,7 @@ class Region:
 
 @dataclass
 class Signal:
-    """A per-tool_use_id fact sourced from transcript.jsonl (V16).
+    """A per-tool_use_id fact sourced from transcript.jsonl.
 
     kind ∈ {truncated, read_error, persisted_output, sidecar_only, sidechain}
     """
@@ -299,7 +303,7 @@ def write_jsonl_atomic(path: str | os.PathLike, rows: Iterable[dict]) -> int:
     """Write rows as JSONL via a .tmp + os.replace, so a reader never sees a
 
     half-written table and a crashed reconcile leaves the previous one intact
-    (§6.1: idempotent, re-runnable months later).
+    (idempotent, re-runnable months later).
     """
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -397,7 +401,7 @@ def _norm_ws(s: str) -> str:
     return re.sub(r"\s+", " ", s or "").strip()
 
 
-# ── harness text classification (§4.2.2: "user + isReplay:true, sha-matched") ─
+# ── harness text classification ("user + isReplay:true, sha-matched") ──
 def classify_harness_text(text: str) -> tuple[str, str, str | None, bool]:
     """(channel, injection_kind, probe_id, sha_matched) for a user text block.
 
@@ -423,12 +427,12 @@ def classify_harness_text(text: str) -> tuple[str, str, str | None, bool]:
 
 # ── tool -> channel mapping ──────────────────────────────────────────────────
 def channel_for_tool_result(tool: str | None, tool_input: dict | None) -> str:
-    """Map a tool_result body to its channel (§4.2.2).
+    """Map a tool_result body to its channel.
 
-    DOCUMENTED MAPPING DECISION: §4.2.2 defines `tool_grep_content` as "Grep,
+    DOCUMENTED MAPPING DECISION: defines `tool_grep_content` as "Grep,
     output_mode=content". A Grep in files_with_matches / count mode returns a
     FILENAME LISTING, which is semantically the tool_glob_filenames channel
-    ("a glob listing whose path carries the nonce", §4.2) — so it is mapped
+    ("a glob listing whose path carries the nonce",) — so it is mapped
     there, with the real tool name kept on the region. Routing it to
     unknown_visible instead would fail CI on an ordinary search.
     """
@@ -459,7 +463,7 @@ class _Builder:
         spec = channel_spec(kw["channel"])
         text = kw.pop("text", "") or ""
         if not spec.model_visible:
-            text = ""  # never scan bytes the model did not see (V6)
+            text = ""  # never scan bytes the model did not see
         r = Region(
             region_idx=self._idx,
             text=text,
@@ -595,7 +599,7 @@ def _emit_tool_result(b: _Builder, rec: StreamRecord, block_idx: int, block: dic
 
 
 def _emit_bash(b: _Builder, body: str, common: dict) -> None:
-    """Split a Bash result into bash_stdout and bash_unattributed (§4.2.2)."""
+    """Split a Bash result into bash_stdout and bash_unattributed."""
     cursor = 0
     visible_budget = SIDECAR_CHAR_CAP
     for m in _PERSISTED_RE.finditer(body or ""):
@@ -688,7 +692,7 @@ def _extract_stream(b: _Builder, records: Sequence[StreamRecord]) -> None:
             continue
 
         # result / hook / rate_limit_event / anything else: no model-visible
-        # region. Hook payloads are DELIBERATELY never scanned (V6).
+        # region. Hook payloads are DELIBERATELY never scanned.
 
 
 # ── transcript.jsonl: truncation, sidecars, attachments ──────────────────────
@@ -704,7 +708,7 @@ def _first_tool_use_id(obj: dict) -> str | None:
 
 def _extract_transcript(b: _Builder, lines: Sequence[tuple[int, dict]],
                         stream_records: Sequence[StreamRecord]) -> None:
-    """Harvest the three things ONLY the transcript has (V16, §3 STATUS.md).
+    """Harvest the three things ONLY the transcript has (V16, ).
 
     1. truncation:      toolUseResult.file.numLines < totalLines  (camelCase!)
     2. sidecars:        persistedOutputPath, and sidecar bodies the model did
@@ -779,6 +783,10 @@ def _extract_transcript(b: _Builder, lines: Sequence[tuple[int, dict]],
                       meta={"seq_approx": approx, "line_no": line_no})
 
 
+
+
+
+
 def _transcript_sidecar(b: _Builder, tur: dict, tid: str | None, seq: int, line_no: int) -> None:
     finfo = tur.get("file") if isinstance(tur.get("file"), dict) else None
     if finfo:
@@ -789,7 +797,7 @@ def _transcript_sidecar(b: _Builder, tur: dict, tid: str | None, seq: int, line_
                 detail={"trigger": "numlines_lt_totallines", "numLines": num,
                         "totalLines": total, "filePath": finfo.get("filePath"),
                         "startLine": finfo.get("startLine")}))
-        # NOTE: `truncated` is None on EVERY read (V16). It is deliberately not
+        # NOTE: `truncated` is None on EVERY read. It is deliberately not
         # consulted; consulting it would silently disable truncation detection.
 
     ppath = tur.get("persistedOutputPath") or tur.get("persisted_output_path")
@@ -862,14 +870,14 @@ def from_run(run_dir: str | os.PathLike) -> RegionSet:
     rs.meta["run_dir"] = str(rd)
     rs.meta["has_transcript"] = bool(transcript)
     if not transcript:
-        # read_censored is computable ONLY from the transcript (V16). Say so
+        # read_censored is computable ONLY from the transcript. Say so
         # loudly rather than letting every row silently score truncated=false.
         rs.meta["truncation_unavailable"] = True
     return rs
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    p = argparse.ArgumentParser(description="model-visible region extraction (§4.2.2)")
+    p = argparse.ArgumentParser(description="model-visible region extraction")
     p.add_argument("--run-dir", required=True)
     p.add_argument("--json", action="store_true", help="dump every region as JSONL on stdout")
     a = p.parse_args(argv)

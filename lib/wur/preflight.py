@@ -11,7 +11,7 @@ RESPONSIBILITY
 
   NO API CALL. Every check reads the filesystem, the git object database, or an
   artifact some earlier stage already wrote. The one subprocess that is not git
-  is `claude --version`, which talks to nobody. (V19: it is invoked with stdin
+  is `claude --version`, which talks to nobody. (it is invoked with stdin
   closed, and its stderr is never read as a verdict.)
 
 INPUTS
@@ -30,21 +30,21 @@ THE TWELVE
   H1  ambient_memory_absent   no CLAUDE.md above the workspace (pilot gate:
                               `ambient_memory` empty on every run)
   H2  registry_unreachable    .registry/ is not an ancestor of the workspace and
-                              no ancestor holds one (V9: under bypassPermissions
+                              no ancestor holds one (under bypassPermissions
                               the agent READ a registry three `..` hops up)
   H3  credentials_isolated    claude_home 700, .credentials.json 600, nothing
                               else seeded — the S2 recipe, exactly
   H4  settings_rendered       the file the CLI will silently ignore if it is
-                              malformed (V12), re-validated from outside
+                              malformed, re-validated from outside
   H5  gate_ready              gate/{req,resp} writable and EMPTY — a stale
                               tool_calls.jsonl would continue last run's ordinals
-  H6  workspace_clean         no watcher artifact inside workspace/ (§5.1(2)),
-                              .claude/ and .cursor/ stripped (V5)
+  H6  workspace_clean         no watcher artifact inside workspace/,
+                              .claude/ and .cursor/ stripped
   H7  carrier_cardinality     exactly one NOTES.md (zero for ctrl-nofile), and
                               CLAUDE.md present iff the arm carries a pointer
   H8  plant_landed            the nonce IS in baseline_sha for a fact arm, and is
                               NOT for a control arm
-  H9  plant_size_cap          every planted file <= 20 KB BY BYTES (V16: the cut
+  H9  plant_size_cap          every planted file <= 20 KB BY BYTES (the cut
                               point is content-dependent across a 2.4x spread and
                               a 200-byte-line file was cut at line 108, so a line
                               cap measurably does not mitigate anything)
@@ -56,8 +56,8 @@ THE TWELVE
 WHAT IS DELIBERATELY NOT ASSERTED
   `system/init.agents == []`. It is never empty — [claude, Explore,
   general-purpose, Plan, statusline-setup] appears under full hygiene on any
-  2.1.222 — so that assertion would fail closed on every single run (V18). The
-  five are harmless because `Task` is absent from `--tools` (V10). What IS
+  2.1.222 — so that assertion would fail closed on every single run. The
+  five are harmless because `Task` is absent from `--tools`. What IS
   asserted is that `tools` set-equals the frozen six and that mcp_servers,
   skills, slash_commands and plugins are empty.
 
@@ -97,11 +97,11 @@ HYGIENE_SCHEMA_VERSION = "1"
 MAX_PLANT_BYTES = 20_000
 
 #: Auto-loaded memory filenames. AGENTS.md is deliberately absent: it is NOT
-#: auto-loaded, which is exactly why §7.1 rejected it as the carrier.
+#: auto-loaded, which is exactly why rejected it as the carrier.
 MEMORY_FILENAMES = ("CLAUDE.md", "CLAUDE.local.md")
 
 #: Names this harness writes. None of them may ever appear inside workspace/ —
-#: anything in the workspace is a context-entry channel (§5.1(2)).
+#: anything in the workspace is a context-entry channel.
 HARNESS_ARTIFACTS = (
     "gate", "watch", "claude_home", "settings.json", "probe_plan.json", "hygiene.json",
     "run_meta.json", "stream.jsonl", "stream.jsonl.gz", "events.jsonl", "exposure.jsonl",
@@ -273,7 +273,7 @@ def h1_ambient_memory_absent(ctx: Ctx) -> tuple[str, str, dict[str, Any]]:
 
 
 def h2_registry_unreachable(ctx: Ctx) -> tuple[str, str, dict[str, Any]]:
-    """The secrets are not on any `..` path out of the workspace (V9)."""
+    """The secrets are not on any `..` path out of the workspace."""
     problems: list[str] = []
     detail: dict[str, Any] = {"job_dir": str(ctx.job_dir) if ctx.job_dir else None}
     ancestors = _ancestors(ctx.workspace)
@@ -309,6 +309,8 @@ def h2_registry_unreachable(ctx: Ctx) -> tuple[str, str, dict[str, Any]]:
     if reachable:
         problems.append(f"registry material reachable by `..` from the workspace: {reachable[:3]}")
 
+
+
     if problems:
         return FAIL, "; ".join(problems), detail
     return PASS, "registry not reachable from the workspace", detail
@@ -341,7 +343,7 @@ def h3_credentials_isolated(ctx: Ctx) -> tuple[str, str, dict[str, Any]]:
 
 
 def h4_settings_rendered(ctx: Ctx) -> tuple[str, str, dict[str, Any]]:
-    """The settings file parses and binds exactly the two argv-bound hooks (V12)."""
+    """The settings file parses and binds exactly the two argv-bound hooks."""
     path = settings_mod.settings_path(ctx.run_dir)
     problems = settings_mod.check_settings_file(path, run_dir=ctx.run_dir, require_barrier=True)
     detail: dict[str, Any] = {"path": str(path)}
@@ -399,7 +401,7 @@ def h6_workspace_clean(ctx: Ctx) -> tuple[str, str, dict[str, Any]]:
     # A repo may legitimately ship a file called settings.json or a directory
     # called watch/. What may not happen is one appearing that the baseline
     # commit does not contain — that one is ours, and it is a context-entry
-    # channel the experiment never chose (§5.1(2)).
+    # channel the experiment never chose.
     found = [name for name in HARNESS_ARTIFACTS
              if (ws / name).exists() and name not in tracked_top]
     detail["harness_artifacts_in_workspace"] = found
@@ -475,7 +477,7 @@ def h7_carrier_cardinality(ctx: Ctx) -> tuple[str, str, dict[str, Any]]:
 
 
 def h8_plant_landed(ctx: Ctx) -> tuple[str, str, dict[str, Any]]:
-    """§4.1, verbatim: the nonce is (or is not) in the planted baseline tree."""
+    """, verbatim: the nonce is (or is not) in the planted baseline tree."""
     detail: dict[str, Any] = {"nonces": ctx.nonces, "fact_present": ctx.fact_present,
                               "baseline_sha": ctx.baseline_sha}
     if not ctx.baseline_sha:
@@ -485,7 +487,7 @@ def h8_plant_landed(ctx: Ctx) -> tuple[str, str, dict[str, Any]]:
             return WARN, ("no nonce supplied for a control arm — absence cannot be verified; "
                           "pass --nonce or --manifest to make this a real check"), detail
         return FAIL, ("no nonce supplied — `available` is unverifiable, and a run whose plant "
-                      "did not land must be excluded, never counted as a miss (§4.1)"), detail
+                      "did not land must be excluded, never counted as a miss"), detail
     found: dict[str, bool] = {}
     for nonce in ctx.nonces:
         rc, _out, err = _git(ctx.workspace, "grep", "-F", "-I", "-i", "-q", "-e", nonce,
@@ -504,7 +506,7 @@ def h8_plant_landed(ctx: Ctx) -> tuple[str, str, dict[str, Any]]:
 
 
 def h9_plant_size_cap(ctx: Ctx) -> tuple[str, str, dict[str, Any]]:
-    """Every fact-bearing file <= 20 KB by BYTES (V16)."""
+    """Every fact-bearing file <= 20 KB by BYTES."""
     detail: dict[str, Any] = {"max_bytes": ctx.max_plant_bytes}
     if not ctx.baseline_sha:
         return FAIL, "no baseline_sha to size", detail
@@ -534,7 +536,7 @@ def h9_plant_size_cap(ctx: Ctx) -> tuple[str, str, dict[str, Any]]:
                    "over": over, "not_in_tree": missing})
     if over:
         return FAIL, (f"planted file(s) over the byte cap: {over} — a fact past the Read cut is "
-                      f"silently absent, with no marker anywhere (V16)"), detail
+                      f"silently absent, with no marker anywhere"), detail
     if missing:
         return FAIL, f"manifest lists file(s) not in the baseline tree: {missing}", detail
     if not candidates:
@@ -557,7 +559,7 @@ def h10_baseline_committed(ctx: Ctx) -> tuple[str, str, dict[str, Any]]:
     if rc == 0 and dirty:
         problems.append(f"worktree is dirty before launch ({len(dirty.splitlines())} entries) — "
                         f"the overlay must be committed, or it lands in git.patch")
-    # §5.2 names a FLAT refs/atlas/baseline, but setup_run.sh deliberately writes
+    # names a FLAT refs/atlas/baseline, but setup_run.sh deliberately writes
     # a per-run refs/atlas/baseline-run/<run_id> instead: refs outside
     # refs/worktree/ are shared by every worktree of the bare repo, so under
     # four-way concurrency the flat name is last-writer-wins and three of four
@@ -641,6 +643,8 @@ def h12_canary_recorded(ctx: Ctx) -> tuple[str, str, dict[str, Any]]:
         if ctx.require_canary:
             problems.append("no canary directory known for this arm")
         return (FAIL if problems else SKIP), "; ".join(problems) or "canary not requested", detail
+
+
 
     rec = _load_json(ctx.canary_dir / "canary.json")
     manifest_init = _load_json(ctx.canary_dir / "context_manifest.json")
@@ -771,11 +775,15 @@ def build_ctx(args: argparse.Namespace) -> Ctx:
             raw = _first(man, "notes_count", default=None)
             expect_notes = int(raw) if isinstance(raw, int) else (0 if arm == "ctrl-nofile" else 1)
 
+
+
     max_bytes = args.max_plant_bytes
     if max_bytes is None:
         caps = man.get("caps") if isinstance(man.get("caps"), dict) else {}
         raw_cap = caps.get("max_bytes")
         max_bytes = int(raw_cap) if isinstance(raw_cap, int) and raw_cap > 0 else MAX_PLANT_BYTES
+
+
 
     probe_enabled = args.probe
     if probe_enabled is None:

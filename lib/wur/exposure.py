@@ -3,7 +3,7 @@
 exposure.py — the nonce scan over model-visible regions -> exposure.jsonl.
 
 RESPONSIBILITY
-  Answer, for one run, the only question §4.2 actually defines:
+  Answer, for one run, the only question actually defines:
 
       did fact f's nonce occur in a model-visible text region of run r,
       and if so — where, through which channel, and in what form?
@@ -12,7 +12,7 @@ RESPONSIBILITY
   trace.py does that from these rows, because `read` is a union over channels
   and this module is deliberately blind to the union rule.
 
-SCAN BEFORE TRUNCATING — ALWAYS (§6.1)
+SCAN BEFORE TRUNCATING — ALWAYS
   This module runs BEFORE events.py digests anything. A digest computed first
   would drop a nonce past the cut, and the run would score "not read" for a fact
   that was sitting in the context window. `assert_scan_before_truncate()` exists
@@ -27,7 +27,7 @@ INPUTS
 
 OUTPUTS
   $RUN_DIR/exposure.jsonl — one JSON object per line, ROW_SCHEMA below.
-  Only `exact` INBOUND hits are eligible to set first_exposure_seq (§4.5): a
+  Only `exact` INBOUND hits are eligible to set first_exposure_seq: a
   lowercased or hyphen-stripped nonce in a tool result is almost certainly the
   agent's own prior text being re-read.
 
@@ -58,7 +58,7 @@ SCHEMA_VERSION = "1"
 #: match_form, ordered strongest-first (protocol.MATCH_FORMS).
 FORM_RANK = {form: i for i, form in enumerate(protocol.MATCH_FORMS)}
 
-#: Only these forms, on an inbound region, may set first_exposure_seq (§4.5).
+#: Only these forms, on an inbound region, may set first_exposure_seq.
 EXPOSURE_FIRST_FORMS = protocol.EXPOSURE_FIRST_FORMS  # ("exact",)
 
 
@@ -67,8 +67,7 @@ ROW_SCHEMA: dict = {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "exposure.row.schema.json",
     "title": "WurExposure",
-    "description": (
-        "One row of $RUN_DIR/exposure.jsonl (STATUS.md §4.2): one (fact x model-visible "
+    "description": ("One row of $RUN_DIR/exposure.jsonl: one (fact x model-visible "
         "region) hit. `model_visible` and `channel_inbound` are fixed per channel; "
         "`inbound` is the EFFECTIVE value after regions.py forces it off for a tool "
         "error body (harness-authored text is not a workspace channel). Only exact "
@@ -168,6 +167,8 @@ def load_fact_cards(source: Any) -> list[FactCard]:
                 if isinstance(body, dict) else str(i)
             cards.append(_card_from_any(fid, body))
     return [c for c in cards if c.fact_id]
+
+
 
 
 def find_facts_file(run_dir: str | os.PathLike, job_dir: str | os.PathLike | None = None) -> Path | None:
@@ -271,7 +272,7 @@ def scan_text(text: str, card: FactCard) -> list[Hit]:
 
 
 def assert_scan_before_truncate(regionset: "regions_mod.RegionSet") -> None:
-    """Precondition of §6.1: nothing has digested or truncated the regions yet.
+    """Precondition of: nothing has digested or truncated the regions yet.
 
     regions.py hands over full region text; events.py replaces it with a digest.
     If a caller ever reorders the chain, this raises instead of silently
@@ -285,13 +286,15 @@ def assert_scan_before_truncate(regionset: "regions_mod.RegionSet") -> None:
             )
 
 
+
+
 def scan(regionset: "regions_mod.RegionSet", cards: Sequence[FactCard], run_id: str) -> list[dict]:
     """exposure.jsonl rows for one run. One row per (fact x matched region)."""
     assert_scan_before_truncate(regionset)
     rows: list[dict] = []
     for region in regionset.regions:
         if not region.model_visible or not region.text:
-            continue  # sidecar_only / persisted_output_ondisk carry no bytes (V6)
+            continue  # sidecar_only / persisted_output_ondisk carry no bytes
         for card in cards:
             hits = scan_text(region.text, card)
             if not hits:
@@ -331,31 +334,17 @@ def scan(regionset: "regions_mod.RegionSet", cards: Sequence[FactCard], run_id: 
     return rows
 
 
-def hits_by_seq(rows: Sequence[dict]) -> dict[int, list[dict]]:
-    """exposure rows regrouped as events.jsonl `nonce_hits` entries, keyed by seq."""
-    out: dict[int, list[dict]] = {}
-    for r in rows:
-        out.setdefault(r["seq"], []).append({
-            "fact_id": r["fact_id"],
-            "channel": r["channel"],
-            "offset": r["offset"],
-            "match_form": r["match_form"],
-            "model_visible": r["model_visible"],
-            "inbound": r["inbound"],
-            "bytes_before": r["bytes_before"],
-        })
-    return out
-
-
 def first_exposure(rows: Sequence[dict], fact_id: str) -> dict | None:
     """The row that sets first_exposure_seq for `fact_id`, or None.
 
-    §4.5: only EXACT INBOUND hits qualify. self_thinking is model-visible but not
+    Only EXACT INBOUND hits qualify. self_thinking is model-visible but not
     inbound, so a thinking-only fact has no first_exposure_seq — which is exactly
     what makes `unexplained_possession` detectable.
     """
     cand = [r for r in rows if r["fact_id"] == fact_id and r.get("sets_first_exposure")]
     return min(cand, key=lambda r: (r["seq"], r["region_idx"])) if cand else None
+
+
 
 
 def run(run_dir: str | os.PathLike, facts: Any = None, out_path: str | os.PathLike | None = None,
@@ -387,7 +376,7 @@ def _run_id_of(run_dir: Path) -> str:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    p = argparse.ArgumentParser(description="nonce scan over model-visible regions (§4.2)")
+    p = argparse.ArgumentParser(description="nonce scan over model-visible regions")
     p.add_argument("--run-dir", required=True)
     p.add_argument("--facts", default=None, help="facts JSON/YAML or probe_key.json")
     p.add_argument("--out", default=None)

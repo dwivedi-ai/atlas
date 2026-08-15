@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-plant.py — render the §7.1 arms into overlays, stamp them, and prove they landed.
+plant.py — render the arms into overlays, stamp them, and prove they landed.
 
 RESPONSIBILITY
   Turn one fact plus one arm into the exact bytes that are copied into a
@@ -9,7 +9,7 @@ RESPONSIBILITY
 
     * SKELETON MATCHING. `docs/`, `docs/internal/` and `docs/internal/memory/`
       exist in EVERY arm, including both controls, each carrying one nonce-free
-      filler so git tracks the directory (§7.1). If the directory tree differed
+      filler so git tracks the directory. If the directory tree differed
       by arm, "depth" would be confounded with "the repo has a docs/ tree", and
       the d1->d2->d3 read-rate curve — the price list this whole instrument
       exists to produce — would be uninterpretable.
@@ -17,7 +17,7 @@ RESPONSIBILITY
       `ctrl-nofile`), named NOTES.md at every depth, so filename salience is
       never confounded with depth. `AGENTS.md` was rejected as the carrier: it
       is not auto-loaded yet carries strong "read me" priors from training.
-    * THE MANIFEST IS A SIBLING OF overlay/, NEVER INSIDE IT (§5.3). Anything
+    * THE MANIFEST IS A SIBLING OF overlay/, NEVER INSIDE IT. Anything
       inside overlay/ is copied into the workspace, and a manifest in the
       workspace would hand the agent the answer key — plus it would change
       `workspace_sha256` and appear in `git.patch`.
@@ -38,12 +38,12 @@ OUTPUTS
   content-dependent cut as low as 21,600 bytes; a fact past the cut looks like
   "read but not used" when it was never exposed at all.
 
-CONDITION DIRECTORY LAYOUT — a documented departure from §5.3
-  §5.3 draws `.registry/conditions/<arm>/overlay/`, which holds exactly one
-  overlay per arm. But §7.2 runs 12 TASKS x 12 arms with one fact per task (D1),
+CONDITION DIRECTORY LAYOUT — a documented departure
+  The original layout was `.registry/conditions/<arm>/overlay/`, which holds
+  exactly one overlay per arm. But the matrix runs 12 TASKS x 12 arms with one fact per task,
   and each task's NOTES.md carries a different fact — so a flat per-arm path
   cannot hold them. `condition_dir()` therefore emits `<arm>` for a single-fact
-  registry (§5.3 verbatim, which is what a single-task job and the canary use)
+  registry (which is what a single-task job and the canary use)
   and `<task_id>/<arm>` for a multi-fact one. The manifest records which layout
   it used, and it is always a sibling of its own overlay/ either way.
 
@@ -89,12 +89,12 @@ INDEX_DIRNAME = "_index"
 NOTES_BASENAME = "NOTES.md"
 CLAUDE_MD_BASENAME = "CLAUDE.md"
 
-# §7.1 skeleton matching: present in every arm, each with one nonce-free filler
+# skeleton matching: present in every arm, each with one nonce-free filler
 # so git tracks the directory.
 SKELETON_DIRS: tuple[str, ...] = ("docs", "docs/internal", "docs/internal/memory")
 SKELETON_FILLER_NAME = "index.md"
 
-DIR_MODE = 0o700          # the registry is 700 (V9); overlay dirs inherit it
+DIR_MODE = 0o700          # the registry is 700; overlay dirs inherit it
 FILE_MODE = 0o644         # these files are destined for a workspace the agent reads
 
 
@@ -102,10 +102,10 @@ class PlantError(Exception):
     """A plant could not be rendered, does not verify, or did not land."""
 
 
-# ── the arms (IMPLEMENTATION.md §7.1) ────────────────────────────────────────
+# ── the arms ────────────────────────────────────────
 @dataclass(frozen=True)
 class Arm:
-    """One row of the §7.1 arms table, in executable form."""
+    """One row of the arms table, in executable form."""
 
     arm_id: str
     depth: str | None            # d0 | d1 | d2 | d3 | None
@@ -124,7 +124,7 @@ class Arm:
 
     @property
     def exposure_basis(self) -> str:
-        """`d0-push` is ASSERTED, not scanned (§4.2.2) — its content is in no log."""
+        """`d0-push` is ASSERTED, not scanned — its content is in no log."""
         return "manifest_canary" if self.pointer_regime == "import" else "event_stream"
 
     @property
@@ -171,22 +171,23 @@ ARMS: dict[str, Arm] = {
         Arm("d2-table", "d2", _D2, "table", "pull", "none", 0, True, True, "format"),
         Arm("d2-dist", "d2", _D2, "prose", "pull", "none", 3, True, True, "discrimination"),
         Arm("ctrl", "d2", _D2, "prose", "pull", "none", 0, False, True, "primary control + Gate 2"),
-        Arm("ctrl-nofile", None, None, None, None, "none", 0, False, True, "secondary control (D3)"),
+        Arm("ctrl-nofile", None, None, None, None, "none", 0, False, True, "secondary control"),
         Arm("d1-np", "d1", _D1, "prose", "pull", "none", 0, True, False, "probe reactivity"),
         Arm("d3-np", "d3", _D3, "prose", "pull", "none", 0, True, False, "probe reactivity"),
-        # §7.2's pilot arithmetic already uses a 13th arm: the difficulty band is
-        # defined on ctrl + no-probe. It is not in the §7.1 table, so it is not in
+        #'s pilot arithmetic already uses a 13th arm: the difficulty band is
+        # defined on ctrl + no-probe. It is not in the table, so it is not in
         # ARMS_V1 and is never planted unless asked for by name.
         Arm("ctrl-np", "d2", _D2, "prose", "pull", "none", 0, False, False,
-            "pilot difficulty band (§7.2), control without probe"),
+            "pilot difficulty band, control without probe"),
     )
 }
+
 
 ARMS_V1: tuple[str, ...] = (
     "d0-push", "d1-ptr", "d1", "d2", "d3", "d2-check", "d2-table", "d2-dist",
     "ctrl", "ctrl-nofile", "d1-np", "d3-np",
-)
-assert len(ARMS_V1) == 12, "§7.1 defines exactly 12 arms"
+    )
+assert len(ARMS_V1) == 12, " defines exactly 12 arms"
 
 
 def arm(arm_id: str) -> Arm:
@@ -249,7 +250,7 @@ def plan(fact: "facts_mod.FactSpec", arm_id: str) -> PlantPlan:
     if a.fact_present and not fact.nonce:
         raise PlantError(
             f"{fact.fact_id}: no nonce minted — run `facts.py mint` before planting {arm_id!r}"
-        )
+    )
 
     files: dict[str, str] = skeleton_files()
 
@@ -259,17 +260,16 @@ def plan(fact: "facts_mod.FactSpec", arm_id: str) -> PlantPlan:
             raise PlantError(
                 f"{fact.fact_id}: arm {arm_id!r} needs {a.distractors} distractors, registry has "
                 f"{len(available)}"
-            )
+    )
         canonical = fact.canonical(with_distractors=a.distractors > 0)
         ds = canonical.distractors[: a.distractors]
         doc_fact = canonical
     else:
-        doc_fact = render_mod.control_fact(
-            fact.canonical(),
+        doc_fact = render_mod.control_fact(fact.canonical,
             control=fact.control,
             regexes=fact.paraphrase_regexes,
             distractor_tokens=fact.distractor_tokens(),
-        )
+    )
         ds = ()
 
     report: dict = {}
@@ -283,11 +283,10 @@ def plan(fact: "facts_mod.FactSpec", arm_id: str) -> PlantPlan:
     if a.claude_md_path is not None:
         files[a.claude_md_path] = render_mod.render_claude_md(
             a.pointer_regime, a.notes_path or NOTES_BASENAME
-        )
+    )
 
     _assert_plan_invariants(a, fact, files)
-    return PlantPlan(
-        arm_id=arm_id,
+    return PlantPlan(arm_id=arm_id,
         task_id=fact.task_id,
         fact_id=fact.fact_id,
         fact_present=a.fact_present,
@@ -296,6 +295,8 @@ def plan(fact: "facts_mod.FactSpec", arm_id: str) -> PlantPlan:
         files=files,
         render_report=report,
     )
+
+
 
 
 def _assert_plan_invariants(a: Arm, fact: "facts_mod.FactSpec", files: Mapping[str, str]) -> None:
@@ -310,8 +311,7 @@ def _assert_plan_invariants(a: Arm, fact: "facts_mod.FactSpec", files: Mapping[s
         if f"{d}/{SKELETON_FILLER_NAME}" not in files:
             problems.append(f"skeleton directory {d}/ missing its filler")
 
-    ns = nonce_mod.NonceSet(
-        {fact.fact_id: fact.nonce} if fact.nonce else {},
+    ns = nonce_mod.NonceSet({fact.fact_id: fact.nonce} if fact.nonce else {},
         surface_forms={fact.fact_id: list(fact.surface_forms)} if fact.surface_forms else None,
     )
     for path, text in files.items():
@@ -326,7 +326,7 @@ def _assert_plan_invariants(a: Arm, fact: "facts_mod.FactSpec", files: Mapping[s
             problems.append(
                 f"{path}: carries the nonce but is not the carrier — a pointer or a filler that "
                 "quotes the fact pushes it, and the pointer/push contrast collapses"
-            )
+    )
         if is_carrier and not carries:
             problems.append(f"{path}: is the carrier but does not contain the nonce")
 
@@ -340,7 +340,7 @@ def _assert_plan_invariants(a: Arm, fact: "facts_mod.FactSpec", files: Mapping[s
             problems.append(
                 f"{CLAUDE_MD_BASENAME}: prose pointer must not carry an @import — it would push "
                 "the fact and `d1-ptr` would stop isolating the pointer"
-            )
+    )
 
     if problems:
         raise PlantError(f"arm {a.arm_id}: " + "; ".join(problems))
@@ -354,12 +354,14 @@ def conditions_root(job_dir: str | Path, *, create: bool = False) -> Path:
     return d
 
 
+
+
 def condition_dir(
     job_dir: str | Path, arm_id: str, task_id: str | None = None, *, create: bool = False
 ) -> Path:
     """`.registry/conditions/<arm>` or `.registry/conditions/<task_id>/<arm>`.
 
-    See the module docstring: §5.3's flat path is kept for single-fact registries
+    See the module docstring:'s flat path is kept for single-fact registries
     and extended by task when a job carries one fact per task (D1 x 12 tasks).
     """
     d = conditions_root(job_dir, create=create)
@@ -383,8 +385,7 @@ def _write(path: Path, text: str) -> None:
     os.chmod(path, FILE_MODE)
 
 
-def _manifest(
-    plan_: PlantPlan,
+def _manifest(plan_: PlantPlan,
     reg: "facts_mod.Registry | None",
     *,
     layout: str,
@@ -396,15 +397,14 @@ def _manifest(
     for path in sorted(plan_.files):
         text = plan_.files[path]
         rep = render_mod.length_report(text)
-        files.append(
-            {
+        files.append({
                 "path": path,
                 "bytes": rep["bytes"],
                 "lines": rep["lines"],
                 "sha256": rep["sha256"],
                 "carries_nonce": bool(ns.find(text)),
             }
-        )
+    )
     return {
         "schema_version": "1",
         "plant_version": PLANT_VERSION,
@@ -438,8 +438,7 @@ def _manifest(
     }
 
 
-def write_arm(
-    job_dir: str | Path,
+def write_arm(job_dir: str | Path,
     fact: "facts_mod.FactSpec",
     arm_id: str,
     *,
@@ -469,14 +468,51 @@ def write_arm(
     man = _manifest(plan_, reg, layout=layout, generated_at=generated_at)
     mpath = cdir / MANIFEST_BASENAME
     if mpath.parent != cdir or OVERLAY_DIRNAME in mpath.relative_to(cdir).parts:
-        raise PlantError("manifest.json must be a sibling of overlay/, never inside it (§5.3)")
+        raise PlantError("manifest.json must be a sibling of overlay/, never inside it")
     _write(mpath, json.dumps(man, indent=2, sort_keys=False) + "\n")
     os.chmod(mpath, facts_mod.REGISTRY_FILE_MODE)
     return man
 
 
-def render_job(
-    job_dir: str | Path,
+def probe_key_entry(fact, sources: dict) -> dict:
+    """One `_index/probe_key.json` row: everything the reconcile chain matches on.
+
+    THIS FILE IS THE ONE RECONCILE ACTUALLY GETS. teardown_run.sh tries it BEFORE
+    facts.yaml — it has to, because the per-arm planted path is knowledge only the
+    plant has — so a field missing here is a field missing from every measurement,
+    on every run, silently.
+
+    `paraphrase_regexes` is the tier-(b) matcher and was the field that got left
+    out. Tier (a) is the literal nonce, which an agent restating a constraint in
+    its own words never emits, and tier (c) (LLM adjudication) is not wired. With
+    the regexes gone, `ever_mention`, `first_mention_seq`, `mention_run_length`,
+    `n_reinjections` and `slot_precision` came back empty and `retention_censored`
+    came back true for EVERY run of EVERY arm — a structural zero on `retained`,
+    one of the four boundaries the instrument exists to measure. It reads as the
+    finding "the agent never mentions the fact", not as a bug. Verified on a live
+    `d1-ptr` run: reconciling the same bytes against facts.yaml instead fires the
+    regex at probe 0 and yields ever_mention=true, retention_censored=false.
+
+    No new leak surface: this file already carries the nonce and the gist, lives in
+.registry (mode 0700), and preflight H2 asserts the registry is unreachable
+    from the workspace.
+
+    The matcher half is `FactSpec.card()` VERBATIM — the same method that already
+    documents itself as "protocol.FactCard.from_dict()-shaped, the mention-matching
+    identity". Spreading it rather than re-listing its fields is the point: a field
+    added to the card in facts.py now reaches reconcile automatically instead of
+    having to be remembered in a second place, which is how the regexes went
+    missing. Only the plant-only fields are added on top.
+    """
+    entry = dict(fact.card())
+    entry["token"] = fact.nonce          # probe_key's historical spelling of `nonce`
+    entry["task_id"] = fact.task_id
+    entry["source_path"] = sources.get("d2") or next((v for v in sources.values() if v), None)
+    entry["source_paths"] = sources
+    return entry
+
+
+def render_job(job_dir: str | Path,
     reg: "facts_mod.Registry",
     *,
     arms: Sequence[str] = ARMS_V1,
@@ -499,7 +535,7 @@ def render_job(
         raise PlantError(
             "layout='flat' with more than one fact would overwrite one arm's overlay with "
             "another task's fact; use layout='by-task'"
-        )
+    )
     generated_at = (
         datetime.now(timezone.utc).replace(microsecond=0).isoformat() if stamp_time else None
     )
@@ -514,31 +550,22 @@ def render_job(
             man = write_arm(
                 job_dir, fact, arm_id, reg=reg, layout=("flat" if flat else "by-task"),
                 task_id=tid, force=force, generated_at=generated_at,
-            )
+    )
             manifests.append(man)
             sources[arm_id] = man["notes_path"] if man["fact_present"] else None
             if man["render_report"]:
                 reports[f"{fact.fact_id}:{arm_id}"] = man["render_report"]
-        probe_key[fact.fact_id] = {
-            "token": fact.nonce,
-            "surface_forms": list(fact.surface_forms),
-            "gist": fact.gist,
-            "task_id": fact.task_id,
-            "distractor_tokens": list(fact.distractor_tokens()),
-            "source_path": sources.get("d2") or next((v for v in sources.values() if v), None),
-            "source_paths": sources,
-        }
+        probe_key[fact.fact_id] = probe_key_entry(fact, sources)
 
     idx = facts_mod.registry_dir(job_dir, create=True) / INDEX_DIRNAME
     idx.mkdir(parents=True, exist_ok=True, mode=DIR_MODE)
     _write(idx / "probe_key.json", json.dumps(probe_key, indent=2, sort_keys=True) + "\n")
     os.chmod(idx / "probe_key.json", facts_mod.REGISTRY_FILE_MODE)
-    _write(
-        idx / "render_report.json",
+    _write(idx / "render_report.json",
         json.dumps(
             {"plant_version": PLANT_VERSION, "generated_at": generated_at, "facts": reports},
             indent=2, sort_keys=True,
-        )
+    )
         + "\n",
     )
     os.chmod(idx / "render_report.json", facts_mod.REGISTRY_FILE_MODE)
@@ -552,7 +579,7 @@ def _read_overlay(odir: Path) -> dict[str, str]:
         if p.is_file():
             out[str(p.relative_to(odir)).replace(os.sep, "/")] = p.read_text(
                 encoding="utf-8", errors="replace"
-            )
+    )
     return out
 
 
@@ -572,6 +599,7 @@ def verify_arm(job_dir: str | Path, arm_id: str, task_id: str | None = None) -> 
 
     if (odir / MANIFEST_BASENAME).exists():
         problems.append("manifest.json is INSIDE overlay/ — it would be copied into the workspace")
+
 
     got = overlay_sha256(files)
     if got != man["overlay_sha256"]:
@@ -632,6 +660,8 @@ def verify_arm(job_dir: str | Path, arm_id: str, task_id: str | None = None) -> 
     }
 
 
+
+
 def verify(job_dir: str | Path, *, arm_id: str | None = None, task_id: str | None = None) -> dict:
     """Verify one arm, or every planted arm plus the cross-arm invariants.
 
@@ -659,7 +689,7 @@ def verify(job_dir: str | Path, *, arm_id: str | None = None, task_id: str | Non
             raise PlantError(
                 f"manifest at unexpected depth: {m} (expected conditions/<arm>/ or "
                 "conditions/<task_id>/<arm>/)"
-            )
+    )
     if not found:
         raise PlantError(f"no manifests under {root}")
 
@@ -673,15 +703,14 @@ def verify(job_dir: str | Path, *, arm_id: str | None = None, task_id: str | Non
         for d in SKELETON_DIRS:
             p = odir / d / SKELETON_FILLER_NAME
             if p.exists():
-                fillers.setdefault(d, set()).add(
-                    hashlib.sha256(p.read_bytes()).hexdigest()
-                )
+                fillers.setdefault(d, set).add(hashlib.sha256(p.read_bytes()).hexdigest()
+    )
     drift = {d: sorted(h) for d, h in fillers.items() if len(h) > 1}
     if drift:
         raise PlantError(
             f"skeleton filler differs across arms: {drift} — the skeleton must be identical in "
             "every arm or it becomes an uncontrolled treatment"
-        )
+    )
     return {
         "arms": results,
         "cross_arm": {"skeleton_identical": True, "skeleton_dirs": list(SKELETON_DIRS)},
@@ -690,8 +719,7 @@ def verify(job_dir: str | Path, *, arm_id: str | None = None, task_id: str | Non
 
 
 # ── did it land? ─────────────────────────────────────────────────────────────
-def assert_applied(
-    job_dir: str | Path,
+def assert_applied(job_dir: str | Path,
     arm_id: str,
     workspace: str | Path,
     *,
@@ -705,10 +733,10 @@ def assert_applied(
 
       1. FILE-LEVEL — every manifest file exists in the workspace with the same
          sha256. A plant that did not land makes the run `analyzable = false`; it
-         is NEVER counted as the agent ignoring the fact (§4.1).
+         is NEVER counted as the agent ignoring the fact.
       2. TREE-LEVEL — `git grep -F -I -i` at `baseline_sha` finds the nonce for a
          fact-present arm and does NOT find it for a control arm. This is the
-         mechanical definition of `available` (§4.1), and the control half is
+         mechanical definition of `available`, and the control half is
          what keeps `confab_rate`'s denominator honest.
     """
     man = json.loads(manifest_path(job_dir, arm_id, task_id).read_text())
@@ -725,8 +753,7 @@ def assert_applied(
             problems.append(f"{entry['path']}: sha256 {got[:12]} != planted {entry['sha256'][:12]}")
         checked += 1
 
-    stray = sorted(
-        str(p.relative_to(ws)).replace(os.sep, "/")
+    stray = sorted(str(p.relative_to(ws)).replace(os.sep, "/")
         for p in ws.rglob(NOTES_BASENAME)
         if p.is_file() and ".git" not in p.parts
     )
@@ -746,7 +773,7 @@ def assert_applied(
             problems.append(
                 f"nonce FOUND in {baseline_sha} for control arm {arm_id!r} — `available` is "
                 "supposed to be false here and every control-conditioned metric is void"
-            )
+    )
 
     if problems:
         raise PlantError(f"arm {arm_id}: " + "; ".join(problems))
@@ -765,8 +792,7 @@ def assert_applied(
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
 def _cli_arms(a: argparse.Namespace) -> int:
-    print(json.dumps(
-        {"v1": [ARMS[x].to_dict() for x in ARMS_V1],
+    print(json.dumps({"v1": [ARMS[x].to_dict() for x in ARMS_V1],
          "extra": [v.to_dict() for k, v in ARMS.items() if k not in ARMS_V1]},
         indent=2,
     ))
@@ -777,13 +803,11 @@ def _cli_render(a: argparse.Namespace) -> int:
     path = a.facts or facts_mod.registry_path(a.job_dir)
     reg = facts_mod.load(path)
     arms = [s.strip() for s in a.arms.split(",")] if a.arms else list(ARMS_V1)
-    out = render_job(
-        a.job_dir, reg, arms=arms,
+    out = render_job(a.job_dir, reg, arms=arms,
         task_ids=[a.task_id] if a.task_id else None,
         layout=a.layout, force=a.force,
     )
-    print(json.dumps(
-        {
+    print(json.dumps({
             "planted": len(out["manifests"]),
             "arms": arms,
             "overlays": {
@@ -802,8 +826,7 @@ def _cli_verify(a: argparse.Namespace) -> int:
 
 
 def _cli_assert_applied(a: argparse.Namespace) -> int:
-    rep = assert_applied(
-        a.job_dir, a.arm, a.workspace, task_id=a.task_id,
+    rep = assert_applied(a.job_dir, a.arm, a.workspace, task_id=a.task_id,
         baseline_sha=a.baseline_sha, repo_dir=a.repo_dir,
     )
     print(json.dumps(rep, indent=2))
@@ -811,7 +834,7 @@ def _cli_assert_applied(a: argparse.Namespace) -> int:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    p = argparse.ArgumentParser(description="WUR arm planting (§7.1)")
+    p = argparse.ArgumentParser(description="WUR arm planting")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     sub.add_parser("arms", help="print the arms table").set_defaults(fn=_cli_arms)
@@ -819,7 +842,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     r = sub.add_parser("render", help="render overlays + manifests for a job")
     r.add_argument("--job-dir", required=True)
     r.add_argument("--facts", help="defaults to <job-dir>/.registry/facts.yaml")
-    r.add_argument("--arms", help="comma-separated arm ids (default: the 12 of §7.1)")
+    r.add_argument("--arms", help="comma-separated arm ids (default: the 12 of)")
     r.add_argument("--task-id")
     r.add_argument("--layout", default="auto", choices=["auto", "flat", "by-task"])
     r.add_argument("--force", action="store_true")

@@ -5,7 +5,7 @@ validate.py — schema validation for every derived table, at teardown.
 RESPONSIBILITY
   Refuse to let a malformed row reach the parquet. Every line of events.jsonl,
   exposure.jsonl, probes.jsonl and fact_trace.jsonl is validated against its
-  schema before the run is marked done, and the closed channel enum of §4.2.2 is
+  schema before the run is marked done, and the closed channel enum of is
   cross-checked against the enum regions.py actually implements — a silent drift
   between the two would defeat the `unknown_visible` tripwire.
 
@@ -197,6 +197,10 @@ def _jsonschema_validator(schema: dict):
     return cls(schema)
 
 
+
+
+
+
 ENGINE = "jsonschema" if _jsonschema_validator({"type": "object"}) is not None else "stdlib-subset"
 
 
@@ -236,7 +240,7 @@ TABLES = (
 
 
 def check_channel_enum(schemas_dir: str | os.PathLike | None = None) -> list[str]:
-    """The closed §4.2.2 enum must be identical in regions.py and both schemas.
+    """The closed enum must be identical in regions.py and both schemas.
 
     A drift here would leave a channel that regions.py can emit but no schema
     admits (or worse, one both admit that nothing can ever produce), and the
@@ -299,7 +303,7 @@ def validate_run(run_dir: str | os.PathLike, schemas_dir: str | os.PathLike | No
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    p = argparse.ArgumentParser(description="validate every derived table (§9 schemas)")
+    p = argparse.ArgumentParser(description="validate every derived table")
     p.add_argument("--run-dir", required=True)
     p.add_argument("--schemas-dir", default=None)
     p.add_argument("--max-errors", type=int, default=25)

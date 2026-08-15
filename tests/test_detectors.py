@@ -5,7 +5,7 @@ test_detectors.py — the Phase-1 gate for the `used` half of the funnel.
 RESPONSIBILITY
   Prove the closed detector registry does the two things a detector can silently
   fail to do: fire on real compliance, and NOT fire on everything else. Phase 1's
-  gate (IMPLEMENTATION.md §9) is "23 base assertions + 7 misclassifications
+  gate is "23 base assertions + 7 misclassifications
   green; battery.py no longer false-PASSes on eval error", so this file is
   organised as exactly that:
 
@@ -174,10 +174,14 @@ class TestRegistryClosure(unittest.TestCase):
         self.assertTrue(any("patterns" in p for p in validate_params("content_present", {})))
         self.assertTrue(any("then" in p for p in validate_params("command_order", {"first": "a"})))
 
+
+
     def test_06_wrong_param_type_rejected(self):
         self.assertTrue(validate_params("content_present", {"patterns": "notalist"}))
         self.assertTrue(validate_params("content_present", {"patterns": ["x"], "min_count": "3"}))
         self.assertTrue(validate_params("path_untouched", {"paths": ["a"], "allow_new": "yes"}))
+
+
 
     def test_07_uncompilable_regex_rejected(self):
         problems = validate_params("content_present", {"patterns": ["("]})

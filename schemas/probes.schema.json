@@ -2,14 +2,14 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "probes.schema.json",
   "title": "WurProbe",
-  "description": "One row of $RUN_DIR/probes.jsonl (STATUS.md §4.3): one probe, sent or unsent, produced by lib/wur/probes.py. One JSON object per line; validate line by line. raw_response is ALWAYS retained verbatim — every classifier above this line is re-derivable from it, which is what makes the D7 slot-classifier calibration recoverable without new runs. Attribution is by echoed probe_id, never by position.",
+  "description": "One row of $RUN_DIR/probes.jsonl: one probe, sent or unsent, produced by lib/wur/probes.py. One JSON object per line; validate line by line. raw_response is ALWAYS retained verbatim — every classifier above this line is re-derivable from it, which is what makes the D7 slot-classifier calibration recoverable without new runs. Attribution is by echoed probe_id, never by position.",
   "type": "object",
   "required": ["schema_version", "run_id", "probe_idx", "probe_id", "outcome", "raw_response", "parse_ok", "parse_tier", "slots"],
   "additionalProperties": false,
 
   "$defs": {
     "slot": {
-      "description": "One of the three answer slots, annotated. Produced by protocol.annotate_slots(). With one fact per task (D1) at least 2 slots are filler by construction.",
+      "description": "One of the three answer slots, annotated. Produced by protocol.annotate_slots(). With one fact per task at least 2 slots are filler by construction.",
       "type": "object",
       "required": ["slot_idx", "fact", "source", "affects_next_action", "slot_class", "match_nonce", "match_regex", "match_llm", "source_verified"],
       "additionalProperties": false,
@@ -19,11 +19,11 @@
         "source":   { "type": "string" },
         "affects_next_action": { "type": ["boolean", "null"], "description": "Null when the model did not supply a parseable boolean." },
         "slot_class": {
-          "description": "HEURISTIC pending D7 (200 hand-labelled pilot slots). Precedence in protocol.classify_slot(): empty -> critical_fact -> distrusted -> task_restatement -> generic_workspace -> filler. `distrusted` means the slot reports the checkpoint mechanism itself or echoes the probe template — the failure the \"Do not report facts about this checkpoint mechanism\" clause exists to prevent (§6.2).",
+          "description": "HEURISTIC pending D7 (200 hand-labelled pilot slots). Precedence in protocol.classify_slot(): empty -> critical_fact -> distrusted -> task_restatement -> generic_workspace -> filler. `distrusted` means the slot reports the checkpoint mechanism itself or echoes the probe template — the failure the \"Do not report facts about this checkpoint mechanism\" clause exists to prevent.",
           "type": "string",
           "enum": ["critical_fact", "task_restatement", "generic_workspace", "filler", "empty", "distrusted"]
         },
-        "match_nonce": { "type": "boolean", "description": "Mention tier (a): exact nonce, case-insensitive, whitespace-normalized (§4.5)." },
+        "match_nonce": { "type": "boolean", "description": "Mention tier (a): exact nonce, case-insensitive, whitespace-normalized." },
         "match_regex": { "type": "boolean", "description": "Mention tier (b): a fact-specific paraphrase regex FROZEN IN facts.yaml BEFORE ANY DATA." },
         "match_llm":   { "type": ["boolean", "null"], "description": "Mention tier (c): 3-vote LLM adjudication. Null until adjudicated. Primary = (a) OR (b); tier (c) becomes primary only if kappa((a)v(b),(c)) < 0.6 — decided by kappa, not by which gives a nicer result." },
         "match_form":  { "type": ["string", "null"], "enum": ["exact", "lower", "nohyphen", "regex", null] },
@@ -61,7 +61,7 @@
     },
     "parse_ok":   { "type": "boolean" },
     "parse_tier": {
-      "description": "The parse ladder of protocol.parse_answer(): strict (exactly one ```json fence satisfying probe_answer.schema.json) -> lenient (any decodable object carrying `facts`, slots padded/truncated to 3) -> failed. STATUS.md §4.3 calls the middle rung \"retry\"; the re-ask is recorded separately in retry_sent/answered_after_retry so the tier always describes the PARSE, not the transport.",
+      "description": "The parse ladder of protocol.parse_answer(): strict (exactly one ```json fence satisfying probe_answer.schema.json) -> lenient (any decodable object carrying `facts`, slots padded/truncated to 3) -> failed. The middle rung is called \"retry\"; the re-ask is recorded separately in retry_sent/answered_after_retry so the tier always describes the PARSE, not the transport.",
       "type": "string",
       "enum": ["strict", "lenient", "failed"]
     },
@@ -80,7 +80,7 @@
     "fidelity_agree":   { "type": ["boolean", "null"] },
 
     "outcome": {
-      "description": "answered = a reply arrived for this probe_id. superseded = probe k+1 fired while k was pending; never suppress a probe, mark k superseded (§6.2). unanswered = sent, run ended first. refused = the reply reads as a refusal (protocol.looks_like_refusal). The pilot gate is refused == 0: a refusal means the trusted stream-json channel broke (V1/V2).",
+      "description": "answered = a reply arrived for this probe_id. superseded = probe k+1 fired while k was pending; never suppress a probe, mark k superseded. unanswered = sent, run ended first. refused = the reply reads as a refusal (protocol.looks_like_refusal). The pilot gate is refused == 0: a refusal means the trusted stream-json channel broke (V1/V2).",
       "type": "string",
       "enum": ["answered", "superseded", "unanswered", "refused"]
     },
@@ -88,7 +88,7 @@
     "is_probe_turn_seq": { "type": ["array", "null"], "items": { "type": "integer" }, "description": "events.jsonl seq values marked is_probe_turn for this probe." },
 
     "kind": { "type": "string", "enum": ["probe", "resume"], "default": "probe", "description": "Resumes are counted separately from probes by lib/extract/core.py." },
-    "turn_message_ids": { "type": ["array", "null"], "items": { "type": "string" }, "description": "Assistant message.ids belonging to this probe's turns. Consumed by lib/extract/core.py to compute tool_calls_task (§4.4 difficulty band = tool calls EXCLUDING probe turns). Absent => core.py falls back to tool_calls_task == tool_calls_total, which is silently wrong on a probed run." },
+    "turn_message_ids": { "type": ["array", "null"], "items": { "type": "string" }, "description": "Assistant message.ids belonging to this probe's turns. Consumed by lib/extract/core.py to compute tool_calls_task (difficulty band = tool calls EXCLUDING probe turns). Absent => core.py falls back to tool_calls_task == tool_calls_total, which is silently wrong on a probed run." },
     "tool_use_ids": { "type": ["array", "null"], "items": { "type": "string" }, "description": "tool_use_ids issued inside this probe's turns; the second half of the tool_calls_task computation." },
 
     "tokens_out": { "type": ["integer", "null"], "minimum": 0, "description": "Output tokens spent on this answer — the instrument's own cost, measured (deduped by message_id)." },

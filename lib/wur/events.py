@@ -6,20 +6,20 @@ RESPONSIBILITY
   Produce one row per event of a run, joining the model's own record of a tool
   call (stream.jsonl) with the harness's authoritative record of the barrier
   that let it through (gate/tool_calls.jsonl), on `tool_use_id`. Report
-  join_coverage; >= 0.99 is a pilot gate (§10). Tag `is_probe_turn` — the field
+  join_coverage; >= 0.99 is a pilot gate. Tag `is_probe_turn` — the field
   that keeps the instrument out of the measurement.
 
 INPUTS
   regions.RegionSet    the canonical ordered records and their model-visible
                        regions; `seq` is assigned there and is authoritative.
   exposure rows        already scanned, so `nonce_hits` can be attached and the
-                       tool result can THEN be digested (§6.1 scan-before-truncate).
+                       tool result can THEN be digested (scan-before-truncate).
   gate/tool_calls.jsonl  {ts, barrier, tool_use_id, tool_name, tool_input}
 
 OUTPUTS
   $RUN_DIR/events.jsonl   rows validating against schemas/events.schema.json
   EventsResult.summary    join_coverage, the token dedupe reconciliation, and
-                          the per-run operations counters the §10 gates read.
+                          the per-run operations counters the gates read.
   EventsResult.probe_turns  the hand-off probes.py consumes, so the answer text
                           is extracted once, here, from the raw stream.
 
@@ -33,7 +33,7 @@ THREE MEASURED RULES THIS MODULE OBEYS
   V14     A denied tool call costs TWO barrier fires, so gate ordinals are not
           tool-call ordinals: gate/tool_calls.jsonl is de-duplicated by
           tool_use_id and the fire count kept in `extra`.
-  V13/§6.2  The probe is replayed as a `user` text block immediately AFTER the
+  V13/  The probe is replayed as a `user` text block immediately AFTER the
           barriered call's tool_result. `is_probe_turn` therefore keys off the
           replayed probe_id TEXT, never off position.
 
@@ -121,7 +121,7 @@ def load_gate(run_dir: str | os.PathLike) -> dict[str, dict]:
     return out
 
 
-# ── token accounting (V7) ────────────────────────────────────────────────────
+# ── token accounting ────────────────────────────────────────────────────
 def _usage_totals(usage: Any) -> tuple[int, int]:
     """(input, output) where input FOLDS CACHE BACK IN.
 
@@ -264,7 +264,7 @@ def build(regionset: Any, gate: dict[str, dict], exposure_rows: Sequence[dict],
                          tool_use_id=tid,
                          barrier=g.get("barrier"),
                          is_error=bool(blk.get("is_error") or blk.get("isError")),
-                         # digest computed AFTER the nonce scan (§6.1)
+                         # digest computed AFTER the nonce scan
                          result_digest=protocol.sha256(body),
                          result_bytes=len(body.encode("utf-8", "replace")),
                          nonce_hits=hits.get((rec.seq, i), []),
@@ -339,7 +339,7 @@ def build(regionset: Any, gate: dict[str, dict], exposure_rows: Sequence[dict],
             "result_output": result_out,
             "dedupe_delta_input": deduped_in - result_in,
             "dedupe_delta_output": deduped_out - result_out,
-            # §10's `deduped_token_total == result.usage total` gate holds for
+            #'s `deduped_token_total == result.usage total` gate holds for
             # INPUT ONLY, and that is a property of the CLI, not a shortcut:
             # stream.jsonl's per-assistant-message usage.output_tokens is a
             # PLACEHOLDER (measured 1, 2 and 5 against real 772 and 499), so
@@ -355,8 +355,10 @@ def build(regionset: Any, gate: dict[str, dict], exposure_rows: Sequence[dict],
     return EventsResult(rows=rows, summary=summary, probe_turns=probe_turns, regionset=regionset)
 
 
+
+
 def _first_line_of_message(records: Sequence[Any]) -> dict[str, int]:
-    """message.id -> the seq of the FIRST stream line carrying it (V7).
+    """message.id -> the seq of the FIRST stream line carrying it.
 
     Every line of the group repeats a byte-identical `usage`; carrying it once,
     on this line, is the whole fix.
@@ -366,6 +368,10 @@ def _first_line_of_message(records: Sequence[Any]) -> dict[str, int]:
         if rec.kind == "assistant" and rec.message_id:
             out.setdefault(rec.message_id, rec.seq)
     return out
+
+
+
+
 
 
 def _hits_by_block(regionset: Any, exposure_rows: Sequence[dict]) -> dict[tuple[int, int], list[dict]]:
@@ -397,6 +403,10 @@ def _truncation_index(regionset: Any) -> dict[str, dict]:
         elif s.kind == "read_error" and s.tool_use_id:
             out[str(s.tool_use_id)] = dict(s.detail, trigger="read_error_256kb")
     return out
+
+
+
+
 
 
 def _tag_probe_turns(rows: list[dict], texts: list[str], gate: dict[str, dict]) -> list[ProbeTurn]:
@@ -493,7 +503,7 @@ def _run_id_of(run_dir: Path) -> str:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    p = argparse.ArgumentParser(description="stream x gate join (§6.1)")
+    p = argparse.ArgumentParser(description="stream x gate join")
     p.add_argument("--run-dir", required=True)
     p.add_argument("--facts", default=None)
     p.add_argument("--out", default=None)

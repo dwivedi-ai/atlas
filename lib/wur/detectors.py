@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-detectors.py — the CLOSED registry of six `used` predicates (§4.3, §6.4).
+detectors.py — the CLOSED registry of six `used` predicates.
 
 RESPONSIBILITY
   Decide, mechanically and without an LLM, whether one planted fact crossed the
@@ -17,7 +17,7 @@ RESPONSIBILITY
   the wrong type, so a generated pack fails loudly instead of silently degrading
   into "detector never fires".
 
-  GRADE BEHAVIOUR, DETECT PROVENANCE (§4.3). The success battery may only test
+  GRADE BEHAVIOUR, DETECT PROVENANCE. The success battery may only test
   what the workspace *does*; this module may only test *how the agent got there*.
   If the battery tests the mandate, success == used and the funnel collapses to
   one measurement.
@@ -41,7 +41,7 @@ OUTPUTS
 
 EXECUTION MODEL
   A fact detector IS a mechanical criterion, so lib/battery.py is the execution
-  engine and no new one is written (§6.4). detect_use.py compiles each binding
+  engine and no new one is written. detect_use.py compiles each binding
   into a battery criterion whose command is this module's `eval` subcommand and
   whose pass_condition is `exit_code == 0`.
 
@@ -101,7 +101,7 @@ DEFAULT_EXCLUDE_GLOBS: tuple[str, ...] = (
     "**/.egg-info/**",
 )
 
-# The carriers of §7.1: `NOTES.md` at every depth plus the `d0-push` import stub.
+# The carriers of: `NOTES.md` at every depth plus the `d0-push` import stub.
 # A content detector that scanned these would fire on the plant itself — that is
 # `available`, not `used`. detect_use.py unions the run's real planted paths on
 # top of this; the constant is the floor so a missing manifest cannot silently
@@ -334,7 +334,7 @@ _SEPARATORS = ("&&", "||", ";;", ";", "|", "\n")
 def split_shell_segments(command: str) -> list[str]:
     """Split one shell command into ordered simple commands.
 
-    ORDERING DECISION, stated explicitly because §4.3 leaves it open: a compound
+    ORDERING DECISION, stated explicitly because leaves it open: a compound
     `a && b` issued as ONE Bash call COUNTS as `a` before `b`. The mandate is
     "run the migration before the tests"; an agent that writes
     `python migrate.py && pytest` has complied — refusing it would score correct
@@ -486,7 +486,7 @@ def _strip_line_comment(line: str, markers: Sequence[str]) -> str:
 class DetectorContext:
     """Everything a predicate is allowed to look at, and nothing else.
 
-    Three sources, all MEASURED (STATUS.md §3): the final workspace tree, the
+    Three sources, all MEASURED: the final workspace tree, the
     unified diff against $BASELINE_SHA, and the ordered Bash commands recorded
     at the PreToolUse barrier. No transcript, no hook payload, no LLM. That is
     what makes `used` reproducible months later from raw artifacts alone.
@@ -641,7 +641,7 @@ class DetectorContext:
         """(path, 1-based line number, line text) over the searchable surface.
 
         diff_only restricts the surface to lines the run ADDED — that is what
-        `used_in_diff` means (§4.4): provenance visible in what changed, rather
+        `used_in_diff` means: provenance visible in what changed, rather
         than in a tree that already contained it.
         """
         if self.diff_only:
@@ -751,7 +751,7 @@ class DetectorSpec:
 
 @dataclass
 class DetectorResult:
-    """The four-field contract of §4.3."""
+    """The four-field contract of"""
 
     eligible: bool
     fired: bool
@@ -878,7 +878,7 @@ def validate_params(name: str, params: dict | None) -> list[str]:
         errs.append(
             "natural_eligibility=false requires a non-empty eligible_when: "
             "disabling the built-in rule without replacing it would make every "
-            "run eligible and destroy the censoring distinction (§4.3)"
+            "run eligible and destroy the censoring distinction"
         )
     for p in spec.all_params():
         if p.required and p.type in ("list[str]", "list[regex]") and not params.get(p.name):
@@ -968,6 +968,8 @@ def _finish(
     if not eligible:
         fired = False
     return DetectorResult(eligible=eligible, fired=fired, evidence=list(evidence), detail=detail)
+
+
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -1341,10 +1343,10 @@ DETECTOR_NAMES: tuple[str, ...] = tuple(REGISTRY)
 N_DETECTORS = 6
 
 assert len(REGISTRY) == N_DETECTORS, (
-    f"the registry is CLOSED at {N_DETECTORS} predicates (§4.3); found {len(REGISTRY)}"
+    f"the registry is CLOSED at {N_DETECTORS} predicates; found {len(REGISTRY)}"
 )
 assert {b for s in _SPECS for b in s.buckets} == set(BUCKETS), (
-    "the six predicates must cover all four fact buckets (§6.4)"
+    "the six predicates must cover all four fact buckets"
 )
 
 

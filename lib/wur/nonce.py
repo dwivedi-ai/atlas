@@ -4,7 +4,7 @@ nonce.py — mints the tracer token the whole instrument is built on, and scans 
 
 RESPONSIBILITY
   Own the one string per fact whose presence in a byte the model provably saw IS
-  the definition of `read` (IMPLEMENTATION.md §4.2). Three properties are
+  the definition of `read`. Three properties are
   load-bearing and every one of them is enforced here rather than assumed:
 
     1. DETERMINISTIC   — minted by blake2s from (salt, repo_sha, fact_id), so a
@@ -18,7 +18,7 @@ RESPONSIBILITY
                          tree. A nonce that is already in the repo makes every
                          run look like a read: it silently inflates read-rate,
                          which is the numerator of almost every metric in
-                         STATUS.md §5. This check is NOT optional.
+                         This check is NOT optional.
 
 INPUTS
   fact_id + repo_sha + salt                 -> mint()
@@ -30,7 +30,7 @@ OUTPUTS
   Nonce strings of the shape `ZQ-4KM7TXP2` (prefix, hyphen, base-32 body).
   NonceHit records {label, nonce, form, start, end, text} whose `form` is drawn
   from protocol.MATCH_FORMS (exact | lower | nohyphen) — only `exact` inbound
-  hits set first_exposure_seq (§4.5), so the form is reported, never collapsed.
+  hits set first_exposure_seq, so the form is reported, never collapsed.
   Report dicts from the assert_* helpers; the assert_* helpers RAISE on failure.
 
 WHY THE ALPHABET LOOKS LIKE THAT
@@ -115,11 +115,6 @@ def strip_sep(s: str) -> str:
     return _STRIP_SEP_RE.sub("", (s or "")).lower()
 
 
-def variants(nonce: str) -> dict[str, str]:
-    """The three literal forms of `nonce`, keyed by match form."""
-    return {"exact": nonce, "lower": nonce.lower(), "nohyphen": strip_sep(nonce)}
-
-
 def match_form(matched: str, nonce: str) -> str | None:
     """Which of exact | lower | nohyphen `matched` is, relative to `nonce`."""
     if matched == nonce:
@@ -165,8 +160,7 @@ def _acceptable(nonce: str, body: str) -> bool:
     return bool(NONCE_RE.fullmatch(nonce))
 
 
-def mint(
-    fact_id: str,
+def mint(fact_id: str,
     repo_sha: str,
     salt: str = DEFAULT_SALT,
     *,
@@ -180,15 +174,13 @@ def mint(
     personalized with PERSON. `attempt` only advances when a candidate is
     rejected (banned substring, all-letter or all-digit body, triple run, or a
     loose collision with `avoid`), so the common case is attempt 0 and the token
-    is a pure function of its inputs.
-
-    §6.4: the fixture ships as a tree plus a deterministic builder precisely so
+    is a pure function of its inputs. The fixture ships as a tree plus a deterministic builder precisely so
     `repo_sha` is stable — mint() is the reason that matters.
     """
     if not fact_id:
         raise ValueError("fact_id must be non-empty")
     if not repo_sha:
-        raise ValueError("repo_sha must be non-empty (§6.4: the mint needs a stable repo_sha)")
+        raise ValueError("repo_sha must be non-empty: the mint needs a stable repo_sha")
     if not re.fullmatch(r"[A-HJ-NP-Z]{2,4}", prefix):
         raise ValueError(f"prefix must be 2-4 chars from the nonce alphabet: {prefix!r}")
     if not 6 <= body_len <= 16:
@@ -205,8 +197,7 @@ def mint(
         if any(_loosely_equal(candidate, other) for other in blocked):
             continue
         return candidate
-    raise MintFailed(
-        f"no acceptable nonce for {fact_id!r} after {MAX_MINT_ATTEMPTS} attempts"
+    raise MintFailed(f"no acceptable nonce for {fact_id!r} after {MAX_MINT_ATTEMPTS} attempts"
     )
 
 
@@ -252,13 +243,12 @@ class NonceSet:
     """Every token a run scans for, compiled once into a single alternation.
 
     `surface_forms` are extra literals declared in facts.yaml that count as the
-    same fact (§4.5 tier (a) accepts them). They are searched with the same loose
+    same fact (tier (a) accepts them). They are searched with the same loose
     pattern and reported under the same label, but `nonce` on the hit is always
     the canonical token, so downstream never has to re-map.
     """
 
-    def __init__(
-        self,
+    def __init__(self,
         nonces: Mapping[str, str] | Iterable[tuple[str, str]],
         *,
         repo_dir: str | Path | None = None,
@@ -368,16 +358,14 @@ class NonceSet:
                         break
             if form is None:
                 form = "nohyphen"
-            hits.append(
-                NonceHit(
-                    label=label,
+            hits.append(NonceHit(label=label,
                     nonce=canonical,
                     form=form,
                     start=m.start(),
                     end=m.end(),
                     text=matched,
-                )
-            )
+    )
+    )
         return hits
 
     def occurs_in(self, text: str) -> bool:
@@ -413,20 +401,19 @@ class NonceSet:
                     if _loosely_contains(form, other_nonce) or _loosely_contains(other_nonce, form):
                         problems.append(
                             f"{label}'s surface form {form!r} overlaps {other}'s token {other_nonce!r}"
-                        )
+    )
         if problems:
             raise NonceCollision("; ".join(problems))
         return {"ok": True, "checked": len(self._by_label), "problems": []}
 
     # ── invariant 3: absence from the pinned tree ──
-    def grep_repo(
-        self,
+    def grep_repo(self,
         baseline_sha: str = "HEAD",
         *,
         repo_dir: str | Path | None = None,
         pathspec: str = ".",
     ) -> dict[str, bool]:
-        """`git grep -F -I -i` each label's tokens at `baseline_sha` (§4.1).
+        """`git grep -F -I -i` each label's tokens at `baseline_sha`.
 
         Returns {label: found}. Searches the exact token AND its `nohyphen`
         form, because a de-hyphenated occurrence in the tree would produce
@@ -456,11 +443,10 @@ class NonceSet:
                 raise NonceError(
                     f"git grep failed ({proc.returncode}) in {d} at {baseline_sha}: "
                     f"{proc.stderr.strip()}"
-                )
+    )
         return out
 
-    def assert_absent_from_repo(
-        self,
+    def assert_absent_from_repo(self,
         baseline_sha: str = "HEAD",
         *,
         repo_dir: str | Path | None = None,
@@ -470,7 +456,7 @@ class NonceSet:
 
         A nonce that is already in the repo makes `read` fire on runs where the
         planted file was never opened — read-rate inflates silently and every
-        exposure-conditioned metric in STATUS.md §5 is wrong in the same
+        exposure-conditioned metric is wrong in the same
         direction. There is no safe way to detect this after the fact, so it is
         checked before a single agent run.
         """
@@ -481,7 +467,7 @@ class NonceSet:
             raise NonceInRepo(
                 f"nonce already present in {baseline_sha}: {detail} — re-mint with a "
                 "different salt; leaving it would inflate read-rate on every run"
-            )
+    )
         return {"ok": True, "baseline_sha": baseline_sha, "checked": sorted(found)}
 
     # ── leak surface ──
@@ -489,11 +475,11 @@ class NonceSet:
         """Raise NonceLeak if any token occurs in text the harness itself sends.
 
         `texts` is {source_name: text}: criteria.json, the task prompt, the
-        accept text, the probe text and the self-analysis prompt (§5.2). A nonce
+        accept text, the probe text and the self-analysis prompt. A nonce
         in any of them means the model can name the fact without ever having read
         the workspace — which is exactly the failure the confab_rate <= 0.05
-        pilot gate is built to catch, arriving through a channel the gate cannot
-        see.
+        pilot gate is built to catch, arriving through a channel the gate
+        cannot see.
         """
         leaks: list[dict] = []
         for source, text in (texts or {}).items():

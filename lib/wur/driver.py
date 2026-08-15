@@ -4,7 +4,7 @@ driver.py — the parent process of the Claude Code child for one WUR run.
 
 RESPONSIBILITY
   Own the child from launch to exit. The driver is the child's PARENT, never a
-  downstream pipe stage (§6.1): a tap in the pipe means a tap crash kills the
+  downstream pipe stage: a tap in the pipe means a tap crash kills the
   agent with SIGPIPE and truncates the only copy of the raw stream. It does four
   things and nothing else —
 
@@ -19,11 +19,11 @@ RESPONSIBILITY
     3. inject    write probe / retry / resume user messages on the child's stdin
                  (the stream-json USER channel — V1/V2: the hook channel is
                  refused as prompt injection and must never carry probe text).
-    4. terminate close stdin, then drain. NEVER wait() before closing stdin (V15:
+    4. terminate close stdin, then drain. NEVER wait() before closing stdin (
                  the child does not exit after `result` and the driver hangs
                  forever).
 
-ORDERING IS NORMATIVE (V13)
+ORDERING IS NORMATIVE
   Inject on stdin, THEN release the barrier. Holding the barrier until the probe
   is answered DEADLOCKS: 20 s held produced zero child output and the injected
   message was not even replayed until the hook returned. No gate response may
@@ -47,14 +47,14 @@ OUTPUTS  (every path under $RUN_DIR; nothing is ever written inside workspace/)
   driver.log                 human-readable timeline
   driver_summary.json        live-parsed counters: tokens (deduped by message.id),
                              pacing, probes, gate, termination — the free
-                             correctness checks §8.1/§10 ask for
+                             correctness checks/ ask for
   agent_exit_code            written by THIS process; the driver always exits 0,
                              which is the contract lib/run_job.sh depends on
 
 WHAT THIS MODULE DELIBERATELY DOES NOT DO
   No derivation. events.jsonl / exposure.jsonl / probes.jsonl / fact_trace.jsonl
   are produced offline by reconcile.py from stream.jsonl + transcript.jsonl, and
-  must remain re-derivable months later after a scanner bugfix (§5.1(3)). The
+  must remain re-derivable months later after a scanner bugfix. The
   counters in driver_summary.json are a live cross-check, not a substitute.
 
 CLI
@@ -92,13 +92,13 @@ except Exception:  # flat import when lib/wur/ is on sys.path (gate.py style)
 
 DRIVER_VERSION = "wur-driver-v1"
 
-# The frozen six (V10). --tools silently ignores names it does not honour, so
+# The frozen six. --tools silently ignores names it does not honour, so
 # preflight asserts the realized set against this list; the driver only sends it.
 TOOLS_ALLOWLIST: tuple[str, ...] = ("Bash", "Read", "Write", "Edit", "Glob", "Grep")
 
 # ── tunables (every one of these is a measurement, not a guess) ──────────────
-FSYNC_EVERY_LINES = 16          # raw-before-derived durability (§5.1(3))
-GATE_POLL_S = 0.005             # matches the hook's own 5 ms poll (§6.2 step 4)
+FSYNC_EVERY_LINES = 16          # raw-before-derived durability
+GATE_POLL_S = 0.005             # matches the hook's own 5 ms poll (step 4)
 MAIN_POLL_S = 0.05
 PARSE_QUEUE_MAX = 20_000        # bounded: a wedged parser must not eat RAM
 DEFAULT_HOOKS_ALIVE_TIMEOUT_S = 90.0    # V12: silently-ignored settings file
@@ -106,10 +106,10 @@ DEFAULT_STALL_TIMEOUT_S = 900.0
 DEFAULT_DRAIN_TIMEOUT_S = 180.0         # measured drain after stdin close: 20.6 s
 DEFAULT_TERM_GRACE_S = 20.0
 DEFAULT_KILL_GRACE_S = 10.0
-DEFAULT_GATE_TIMEOUT_MS = 300_000       # §6.2 step 4 default
+DEFAULT_GATE_TIMEOUT_MS = 300_000       # step 4 default
 DEFAULT_BUDGET_STEPS = 60
 DEFAULT_MAX_RETRIES = 1                 # RETRY_TEXT re-asks per probe
-DEFAULT_MAX_RESUMES = 3                 # §6.2: capped at 3 CONSECUTIVE
+DEFAULT_MAX_RESUMES = 3                 #: capped at 3 CONSECUTIVE
 TIMEOUT_EXIT_CODE = 124                 # telemetry.py maps 124 -> terminal "timeout"
 ABORT_EXIT_CODE = 70                    # driver-side abort (hooks dead, no child, ...)
 
@@ -117,6 +117,8 @@ ABORT_EXIT_CODE = 70                    # driver-side abort (hooks dead, no chil
 # ── small helpers ────────────────────────────────────────────────────────────
 def _iso(ts: float | None = None) -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(ts if ts is not None else time.time())) + "Z"
+
+
 
 
 def _dig(obj: Any, *paths: str, default: Any = None) -> Any:
@@ -183,8 +185,8 @@ def _uuid_for(run_id: str) -> str:
     """A deterministic session UUID derived from run_id.
 
     Deterministic on purpose: teardown copies the transcript BY --session-id
-    (§5.2 step 2), so the id must be reconstructible if run_meta.json is lost.
-    uuid4 is banned as measured randomness (§6.2) and this is not randomness.
+    (step 2), so the id must be reconstructible if run_meta.json is lost.
+    uuid4 is banned as measured randomness and this is not randomness.
     """
     digest = hashlib.sha256(("wur-session|" + run_id).encode()).digest()[:16]
     return str(uuid.UUID(bytes=digest, version=4))
@@ -250,6 +252,10 @@ def build_config(args: argparse.Namespace) -> DriverConfig:
         prompt = _first(_env("TASK_PROMPT"), _dig(meta, "task_prompt", "task.prompt"))
     if not prompt:
         raise SystemExit("driver: a task prompt is required (--task-prompt/--task-prompt-file/$TASK_PROMPT)")
+
+
+
+
 
     run_id = str(_first(args.run_id, _env("EXPERIMENT_RUN_ID"), _dig(meta, "run_id", "run.run_id"), run_dir.name))
     session_id = str(
@@ -321,11 +327,11 @@ def build_config(args: argparse.Namespace) -> DriverConfig:
 
 
 def build_argv(cfg: DriverConfig) -> list[str]:
-    """The §5.2 command line, built from a LIST — never a shell string.
+    """The command line, built from a LIST — never a shell string.
 
-    Order follows §5.2 so a diff against the spec is readable. --max-budget-usd
+    Order follows so a diff against the spec is readable. --max-budget-usd
     and --effort are conditional; everything else is unconditional and any change
-    to it changes cli_argv_sha256, which is exactly the point (§5.1(6)).
+    to it changes cli_argv_sha256, which is exactly the point.
     """
     argv = [
         cfg.claude_bin,
@@ -356,7 +362,7 @@ def build_argv(cfg: DriverConfig) -> list[str]:
 def canonical_argv(argv: Sequence[str], cfg: DriverConfig) -> list[str]:
     """argv with the four per-run varying values replaced by placeholders.
 
-    Same lesson as init_sha256 (V18): a hash of the raw argv differs on every run
+    Same lesson as init_sha256: a hash of the raw argv differs on every run
     and defeats its own purpose. The canonical form is what makes
     cli_argv_sha256 comparable across runs; the raw argv is recorded verbatim
     beside it.
@@ -503,7 +509,7 @@ class Driver:
     def log(self, kind: str, detail: str = "") -> None:
         """One timestamped line to driver.log AND to stderr.
 
-        Non-empty stderr is NOT a failure signal for this harness (V19); the
+        Non-empty stderr is NOT a failure signal for this harness; the
         health check is $RUN_DIR/agent_exit_code plus driver_summary.json.
         """
         line = f"[{time.time() - self.t0:8.2f}] {kind}: {detail}"
@@ -551,13 +557,15 @@ class Driver:
             max_probes=self.cfg.probe_max,
             salt=self.cfg.probe_salt,
         )
-        # setup_run.sh owns this file (§5.2); regenerating it is a fallback for
+        # setup_run.sh owns this file; regenerating it is a fallback for
         # standalone/driver-only invocation and is logged loudly.
         _write_json_atomic(plan_path, plan)
         self.fire_at = list(plan["fire_at"])
         self.intervals = list(plan["intervals"])
         self.probe_plan_source = "regenerated by driver (cadence.schedule)"
         self.log("probe-plan", f"probe_plan.json was absent; regenerated: fire_at={self.fire_at}")
+
+
 
     # ── preconditions ──
     def _preflight(self) -> str | None:
@@ -584,7 +592,7 @@ class Driver:
                 except Exception as exc:
                     return f"cannot clear stale {stale}: {exc}"
         if self.stream_path.exists() and self.stream_path.stat().st_size:
-            # Append, never truncate: raw bytes are never destroyed (§5.1(3)).
+            # Append, never truncate: raw bytes are never destroyed.
             self.log(
                 "preflight",
                 f"stream.jsonl already holds {self.stream_path.stat().st_size} bytes from a previous "
@@ -598,7 +606,7 @@ class Driver:
     # ── child ──
     def _child_env(self) -> dict[str, str]:
         env = dict(os.environ)
-        # Subscription path, not a stray API key (§7.2 billing; run_agent.sh does
+        # Subscription path, not a stray API key (billing; run_agent.sh does
         # the same with `env -u`).
         env.pop("ANTHROPIC_API_KEY", None)
         env["CLAUDE_CONFIG_DIR"] = str(self.cfg.config_dir)
@@ -721,6 +729,8 @@ class Driver:
             content = []
         tool_uses = [c for c in content if isinstance(c, dict) and c.get("type") == "tool_use"]
         texts = [c.get("text") or "" for c in content if isinstance(c, dict) and c.get("type") == "text"]
+
+
 
         with self._lock:
             if mid:
@@ -848,7 +858,7 @@ class Driver:
             ):
                 self._maybe_retry(pending)
                 return
-            # §6.2: zero-tool-call result ⇒ RESUME_TEXT, capped at 3 CONSECUTIVE.
+            #: zero-tool-call result ⇒ RESUME_TEXT, capped at 3 CONSECUTIVE.
             # Fires identically in the no-probe arms — it is not a probed-arm-only
             # intervention, or it confounds the probe-reactivity contrast.
             if resumes < self.cfg.max_resumes:
@@ -911,7 +921,7 @@ class Driver:
                 sent_at_barrier=barrier,
                 sent_ts=time.time(),
             )
-            # §6.2: NEVER suppress. If k+1's barrier arrives while k is pending,
+            #: NEVER suppress. If k+1's barrier arrives while k is pending,
             # send k+1 anyway and mark k superseded.
             if prev is not None and prev.outcome == "unanswered":
                 prev.outcome = "superseded"
@@ -931,9 +941,9 @@ class Driver:
     def _gate_loop(self) -> None:
         """Poll gate/req/<tid>.json, decide, write gate/resp/<tid>.json.
 
-        Every decision is a pure function of counters (§6.2): no gate response
+        Every decision is a pure function of counters: no gate response
         may depend on model output, because holding the barrier for an answer
-        deadlocks (V13).
+        deadlocks.
         """
         try:
             self._gate_loop_body()
@@ -968,7 +978,7 @@ class Driver:
                 payload = _read_json(self.req_dir / name)
                 if payload is None:
                     # A partially-written request: retry a few polls, then fail
-                    # OPEN. Never wedge a run on harness failure (§6.2 step 6).
+                    # OPEN. Never wedge a run on harness failure (step 6).
                     cnt = pending_unparsed.get(tid, 0) + 1
                     pending_unparsed[tid] = cnt
                     if cnt < 40:
@@ -1034,7 +1044,7 @@ class Driver:
 
         fired: list[str] = []
         if not over_budget and first_time and self.cfg.probe_enabled:
-            # ORDERING IS NORMATIVE (V13): inject on stdin, THEN release.
+            # ORDERING IS NORMATIVE: inject on stdin, THEN release.
             while True:
                 with self._lock:
                     k = self.next_probe_idx
@@ -1082,7 +1092,7 @@ class Driver:
         """gate/broadcast.json — the standing order for every unanswered barrier.
 
         gate.py falls back to this file when gate/resp/<key>.json is absent, which
-        is how budget stop denies EVERY subsequent call (V14) without the driver
+        is how budget stop denies EVERY subsequent call without the driver
         having to race each new request, and how the post-stdin-close drain avoids
         burning a full gate timeout per in-flight tool call.
         """
@@ -1100,6 +1110,8 @@ class Driver:
             self.log("gate", f"broadcast standing order: {decision}")
         except Exception as exc:
             self.errors.append(f"gate broadcast: {exc}")
+
+
 
     def _write_response(self, resp_path: Path, tid: str, decision: str, reason: str | None, barrier: int) -> None:
         body = {
@@ -1144,7 +1156,7 @@ class Driver:
         self.log("term", "stdin closed (graceful drain: the in-flight turn completes, V15)")
 
     def _terminate(self, drain_s: float | None = None) -> int:
-        """The termination ladder. NEVER wait() before closing stdin (V15)."""
+        """The termination ladder. NEVER wait() before closing stdin."""
         assert self.child is not None
         drain_s = self.cfg.drain_timeout_s if drain_s is None else drain_s
         self._close_stdin()
@@ -1230,7 +1242,7 @@ class Driver:
         self._send(cfg.task_prompt, "task")
         self._main_loop()
 
-        # Closing stdin is a graceful drain, not a stop (V15) — the in-flight turn
+        # Closing stdin is a graceful drain, not a stop — the in-flight turn
         # runs to completion. That is what we want on a normal finish, but an
         # aborted or timed-out run must not sit through a full drain window.
         if self.abort_reason:
@@ -1282,7 +1294,7 @@ class Driver:
                     # ignored ⇒ zero hooks, zero barriers, zero probes, no error.
                     self.abort_reason = (
                         f"watch/hooks_alive did not appear within {cfg.hooks_alive_timeout_s:.0f}s — "
-                        "the settings file was silently ignored (V12); this run has no barrier"
+                        "the settings file was silently ignored; this run has no barrier"
                     )
                     self.log("abort", self.abort_reason)
                     self._finish("hooks_not_alive")
@@ -1300,9 +1312,11 @@ class Driver:
             time.sleep(MAIN_POLL_S)
 
     def _hooks_alive_marker(self) -> bool:
-        # §5.3 puts it in watch/; the gate dir is accepted as a fallback so a
+        # puts it in watch/; the gate dir is accepted as a fallback so a
         # template that keeps the S7 layout still starts.
         return (self.watch_dir / "hooks_alive").exists() or (self.gate_dir / "hooks_alive").exists()
+
+
 
     def _do_resume(self) -> None:
         with self._lock:
@@ -1330,7 +1344,7 @@ class Driver:
 
     # ── accounting + summary ──
     def _token_accounting(self) -> dict:
-        """Dedupe by message.id (V7) and check it against the `result` events.
+        """Dedupe by message.id and check it against the `result` events.
 
         MEASURED HERE, and it refines V7 in two ways that matter (both verified on
         real 2.1.222 runs during this module's smoke test):
@@ -1339,7 +1353,7 @@ class Driver:
            result carried exactly its own turn's tokens (4 / 33,977 / 656 =
            16,940 + 17,037 + 2 + 2), while `total_cost_usd` DID accumulate. So the
            authoritative total is the SUM over result events; `result_*_last` is
-           kept only as a diagnostic. The §10 gate is
+           kept only as a diagnostic. The gate is
            `deduped_input == result_input_sum` — measured EXACT (51,579 == 51,579).
         2. The stream's per-assistant-message `usage.output_tokens` is a
            PLACEHOLDER (observed 1, 2 and 5 against a real 772 and 499). Output
@@ -1379,7 +1393,7 @@ class Driver:
             "authoritative_input": sum_in,
             "authoritative_output": sum_out,
             "cost_usd": cost,                      # total_cost_usd IS cumulative
-            # the dedupe, and the free correctness check (§8.1 / §10)
+            # the dedupe, and the free correctness check ( /)
             "deduped_input": ded_in,
             "deduped_output_stream": ded_out,      # placeholder values; see docstring
             "distinct_message_ids": len(usages),
@@ -1407,7 +1421,7 @@ class Driver:
         }
 
     def _canonical_init(self) -> tuple[str | None, dict | None]:
-        """init_sha256 over a CANONICALIZED system/init (V18).
+        """init_sha256 over a CANONICALIZED system/init.
 
         cwd, memory_paths, session_id and uuid vary every run; hashing the raw
         event defeats its own purpose. With those four dropped the hash was

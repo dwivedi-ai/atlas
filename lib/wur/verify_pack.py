@@ -15,7 +15,7 @@ RESPONSIBILITY
   separated nothing, it simply had no site to look at. That is reported as a
   non-separating case unless the case explicitly declares allow_ineligible.
 
-  PRIOR CHECK (--prior-check), IMPLEMENTATION.md §6.3, stages 1 and 1b, both at
+  PRIOR CHECK (--prior-check), stages 1 and 1b, both at
   ZERO agent runs:
       Gate 1  — the pristine base tree. The detector must not fire on a repo
                 nobody has touched, or the mandate is not counter-prior.
@@ -71,7 +71,7 @@ from detect_use import Binding, binding_from_entry  # noqa: E402
 
 SCHEMA_VERSION = "1"
 
-# §6.3 / the assignment: three that comply, two that do not. Fewer than this and
+# / the assignment: three that comply, two that do not. Fewer than this and
 # the truth table cannot distinguish "the detector works" from "the one patch I
 # wrote happens to match".
 MIN_REFERENCE = 3
@@ -112,8 +112,7 @@ def _as_case(raw: Any, kind: str, root: Path, idx: int) -> Case:
         bash = [bash]
     if not isinstance(bash, list) or any(not isinstance(x, str) for x in bash):
         raise ValueError(f"{kind}[{idx}]: bash must be a list of strings")
-    return Case(
-        case_id=str(raw.get("id") or f"{kind}-{idx}"),
+    return Case(case_id=str(raw.get("id") or f"{kind}-{idx}"),
         kind=kind,
         patch=(root / patch) if patch else None,
         bash=list(bash),
@@ -132,10 +131,14 @@ class Pack:
     near_miss: list[Case] = field(default_factory=list)
     prior_workspaces: list[Case] = field(default_factory=list)
     base_tree: Path | None = None
+    #: The minted nonce, substituted for `{nonce}` when a case patch is applied. A
+    #: pack whose mandate is "stamp this exact token" would otherwise have to
+    #: hardcode the answer key in every reference patch — which pins the nonce, so
+    #: `mint --force` desynchronizes the pack and Gate 1b flips to reject.
+    nonce: str | None = None
 
 
-def load_packs(
-    facts_path: Path, *, root: Path | None = None,
+def load_packs(facts_path: Path, *, root: Path | None = None,
     fact_id: str | None = None, task_id: str | None = None,
 ) -> list[Pack]:
     """Read the registry into Packs.
@@ -171,45 +174,41 @@ def load_packs(
         near_raw = v.get("near_miss") or v.get("near_miss_patches") or []
         ws_raw = v.get("prior_workspaces") or v.get("cross_task_workspaces") or []
         base = v.get("base_tree")
-        packs.append(
-            Pack(
-                binding=binding,
+        packs.append(Pack(binding=binding,
                 reference=[_as_case(r, "reference", root, i) for i, r in enumerate(ref_raw, 1)],
                 near_miss=[_as_case(r, "near_miss", root, i) for i, r in enumerate(near_raw, 1)],
                 prior_workspaces=[
                     _as_case(r, "prior_workspace", root, i) for i, r in enumerate(ws_raw, 1)
                 ],
                 base_tree=(root / base) if base else None,
-            )
-        )
+                nonce=(str(entry.get("nonce")) if entry.get("nonce") else None),
+    )
+    )
     return packs
 
 
 # ── running one case ─────────────────────────────────────────────────────────
-def run_case(
-    binding: Binding, case: Case, base_tree: Path, *,
+def run_case(binding: Binding, case: Case, base_tree: Path, *,
     venv: Path | None = None, workdir: Path | None = None,
+    nonce: str | None = None,
 ) -> dict:
     """Materialize one case and run the binding over it through battery.run."""
     scope_res = None
     try:
         if case.workspace is not None:
-            scope_res = detect_use.build_scope(
-                "workspace", workspace=case.workspace,
+            scope_res = detect_use.build_scope("workspace", workspace=case.workspace,
                 bash_commands=case.bash, planted_paths=binding.planted_paths,
                 venv=venv, workdir=workdir,
-            )
+    )
         elif case.patch is not None:
-            scope_res = detect_use.build_scope(
-                "patch", tree=base_tree, patch=case.patch,
+            scope_res = detect_use.build_scope("patch", tree=base_tree, patch=case.patch,
                 bash_commands=case.bash, planted_paths=binding.planted_paths,
-                venv=venv, workdir=workdir,
-            )
+                venv=venv, workdir=workdir, nonce=nonce,
+    )
         else:
-            scope_res = detect_use.build_scope(
-                "tree", tree=base_tree, bash_commands=case.bash,
+            scope_res = detect_use.build_scope("tree", tree=base_tree, bash_commands=case.bash,
                 planted_paths=binding.planted_paths, venv=venv, workdir=workdir,
-            )
+    )
         payload = detect_use.detect([binding], scope_res, with_diff_only=False, workdir=workdir)
     except (ValueError, RuntimeError) as e:
         return {
@@ -260,31 +259,28 @@ def verify_pack(
     if len(pack.reference) < MIN_REFERENCE:
         problems.append(
             f"only {len(pack.reference)} reference cases; >= {MIN_REFERENCE} required"
-        )
+    )
     if len(pack.near_miss) < MIN_NEAR_MISS:
         problems.append(
             f"only {len(pack.near_miss)} near-miss cases; >= {MIN_NEAR_MISS} required"
-        )
-    rows = [run_case(pack.binding, c, tree, venv=venv, workdir=workdir)
+    )
+    rows = [run_case(pack.binding, c, tree, venv=venv, workdir=workdir, nonce=pack.nonce)
             for c in list(pack.reference) + list(pack.near_miss)]
     for r in rows:
         if not r["ok"]:
             if r["error"]:
                 problems.append(f"{r['case_id']}: error: {r['error']}")
             elif r["expected_fired"]:
-                problems.append(
-                    f"{r['case_id']}: reference patch did NOT fire "
+                problems.append(f"{r['case_id']}: reference patch did NOT fire "
                     f"(eligible={r['eligible']}) — the detector misses real compliance"
-                )
+    )
             elif r["fired"]:
-                problems.append(
-                    f"{r['case_id']}: near-miss FIRED — the detector over-matches"
-                )
+                problems.append(f"{r['case_id']}: near-miss FIRED — the detector over-matches"
+    )
             else:
-                problems.append(
-                    f"{r['case_id']}: near-miss was not eligible, so it separated "
+                problems.append(f"{r['case_id']}: near-miss was not eligible, so it separated "
                     "nothing; give the case a site or set allow_ineligible"
-                )
+    )
     separates = not problems
     return {
         "fact_id": pack.binding.fact_id,
@@ -326,14 +322,14 @@ def prior_check(
         Case(case_id=f"gate1b-ws-{i}", kind="prior_workspace", workspace=Path(w))
         for i, w in enumerate(extra_workspaces, 1)
     ]
-    # The near-misses double as Gate 1b material: §6.3 names ">= 2 near-miss
+    # The near-misses double as Gate 1b material: names ">= 2 near-miss
     # patches" as part of stage 1b, and they are already authored.
     corpus += [
         Case(case_id=f"gate1b-{c.case_id}", kind="prior_workspace", patch=c.patch,
              bash=c.bash, workspace=c.workspace, allow_ineligible=True, note=c.note)
         for c in pack.near_miss
     ]
-    rows = [run_case(pack.binding, c, tree, venv=venv, workdir=workdir) for c in corpus]
+    rows = [run_case(pack.binding, c, tree, venv=venv, workdir=workdir, nonce=pack.nonce) for c in corpus]
 
     fires = int(g1_fired) + sum(1 for r in rows if r["fired"])
     n_checked = 1 + len(rows)
@@ -441,7 +437,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if a.out_dir and a.prior_check:
         outdir = Path(a.out_dir)
         outdir.mkdir(parents=True, exist_ok=True)
-        # §5.3 names the artifact .registry/prior_check/<task_id>.json, which D1
+        # names the artifact .registry/prior_check/<task_id>.json, which D1
         # (one fact per task) makes unambiguous. If a registry ever carries two
         # facts for one task, disambiguate rather than silently clobbering the
         # first fact's gate result.
@@ -461,18 +457,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not a.quiet:
         for r in results:
             if a.prior_check:
-                print(
-                    f"[prior-check] {r['fact_id']}: fires={r['n_fires']}/{r['n_checked']} "
+                print(f"[prior-check] {r['fact_id']}: fires={r['n_fires']}/{r['n_checked']} "
                     f"status={r['prior_check_status']} -> {r['disposition']}",
                     file=sys.stderr,
-                )
+    )
             else:
                 verdict = "SEPARATES" if r["separates"] else "FAILED"
-                print(
-                    f"[verify-pack] {r['fact_id']} ({r['detector']}): {verdict} "
+                print(f"[verify-pack] {r['fact_id']} ({r['detector']}): {verdict} "
                     f"({r['n_reference']} ref / {r['n_near_miss']} near-miss)",
                     file=sys.stderr,
-                )
+    )
                 for prob in r["problems"]:
                     print(f"    - {prob}", file=sys.stderr)
     return 0 if payload["ok"] else 1

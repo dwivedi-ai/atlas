@@ -3,9 +3,9 @@
 trace.py — the headline table: one row per (run x fact) -> fact_trace.jsonl.
 
 RESPONSIBILITY
-  Place one run at one point in the funnel available -> read -> used -> retained
-  (STATUS.md §4.4) by joining exposure.jsonl, events.jsonl, probes.jsonl and
-  use_detect.json. With one fact per task (D1) there is exactly one row per run,
+  Place one run at one point in the funnel available -> read -> used -> retained,
+  by joining exposure.jsonl, events.jsonl, probes.jsonl and
+  use_detect.json. With one fact per task there is exactly one row per run,
   which is what makes rows independent strata for every significance test and
   the resampling unit for the bootstrap.
 
@@ -21,19 +21,19 @@ OUTPUTS
   $RUN_DIR/fact_trace.jsonl   rows validating against schemas/fact_trace.schema.json
 
 THE FOUR RULES THAT ARE NOT NEGOTIABLE
-  D4 (§4.2.1)  read = inbound U self_thinking is PRIMARY. read_inbound_only is
+  D4  read = inbound U self_thinking is PRIMARY. read_inbound_only is
       recorded alongside on every row so the mandatory sensitivity analysis
       needs no re-run. unexplained_possession = a self_thinking hit with NO
       PRIOR inbound hit; it is the compensating alarm for folding thinking into
       read, and any true row is quarantined and hand-audited.
-  §4.2.2  d0-push is ASSERTED, not scanned: exposure_basis = manifest_canary and
+  d0-push is ASSERTED, not scanned: exposure_basis = manifest_canary and
       EVERY seq/byte field is null. This module RAISES if a manifest_canary row
       would carry one — a measured seq is preserved in `extra` instead, so the
       assertion never costs information.
-  §4.2.2  Ordering invariant: for every row with read = 1 AND ever_mention = 1,
+  Ordering invariant: for every row with read = 1 AND ever_mention = 1,
       first_exposure_seq < first_mention_seq. Violations are COUNTED and
       quarantine the run.
-  §4.2.2  A truncated or errored read on the fact file scores read = UNKNOWN,
+  A truncated or errored read on the fact file scores read = UNKNOWN,
       never read = 0. Wide searches truncate and deep facts are found by wide
       searches, so coercing unknown to false would make the bias run WITH the
       hypothesis.
@@ -62,15 +62,15 @@ SCHEMA_VERSION = "1"
 JOIN_COVERAGE_GATE = 0.99
 PARSE_OK_GATE = 0.90
 
-#: Channels whose hits are the model's own production, not exposure (§4.2.2).
+#: Channels whose hits are the model's own production, not exposure.
 ECHO_CHANNELS = frozenset({"self_text", "tool_input", "probe_answer"})
 
-#: Bash verbs that constitute "opening" a file for §4.4's `opened`.
+#: Bash verbs that constitute "opening" a file for `opened`.
 _OPEN_VERBS = ("cat", "sed", "head", "tail", "less", "more", "awk", "nl", "bat", "view")
 
 
 class D0PushSeqViolation(RuntimeError):
-    """A manifest_canary row carried a non-null seq/byte field (§4.2.2)."""
+    """A manifest_canary row carried a non-null seq/byte field."""
 
 
 # ── inputs ───────────────────────────────────────────────────────────────────
@@ -130,8 +130,7 @@ def load_use_detect(run_dir: Path, fact_id: str) -> dict:
     return {
         "eligible": _as_bool(node.get("eligible")),
         "fired": _as_bool(_either("fired", "used")),
-        "fired_in_diff": _as_bool(
-            _either("fired_in_diff", "used_in_diff")
+        "fired_in_diff": _as_bool(_either("fired_in_diff", "used_in_diff")
             if _either("fired_in_diff", "used_in_diff") is not None
             else detail.get("fired_in_diff", detail.get("used_in_diff"))
         ),
@@ -200,7 +199,7 @@ def targets_fact_file(tool: str | None, tool_input: dict | None, planted: str | 
                        unspecified (i.e. the workspace root)
     Bash               the command names the planted path or its basename
 
-    Deliberately inclusive on the search channels: §4.2.2 warns that wide
+    Deliberately inclusive on the search channels: warns that wide
     searches truncate and deep facts are found by wide searches, so a narrow
     reading here would silently score `not_read` where the honest answer is
     `unknown`.
@@ -225,7 +224,7 @@ def targets_fact_file(tool: str | None, tool_input: dict | None, planted: str | 
 
 
 def opened_fact_file(rows: Sequence[dict], planted: str | None) -> bool:
-    """§4.4 `opened`: a Read/cat/sed whose resolved target IS the planted path.
+    """ `opened`: a Read/cat/sed whose resolved target IS the planted path.
 
     read - opened is the reported incidental-exposure rate: did the agent FIND
     the fact, or stumble into it via grep?
@@ -264,7 +263,7 @@ def build_row(run_dir: str | os.PathLike, card: Any, *, exposure_rows: Sequence[
     planted = planted_path_of(card, meta)
     factors = _factors_of(meta)
 
-    # ── available (§4.1) ──
+    # ── available ──
     available = meta.get("available")
     if available is None:
         available = factors.get("fact_present")
@@ -292,18 +291,19 @@ def build_row(run_dir: str | os.PathLike, card: Any, *, exposure_rows: Sequence[
         first_think = min(r["seq"] for r in thinking)
         unexplained = not any(r["seq"] < first_think for r in inbound)
 
-    # §4.5 STRICT: only an EXACT INBOUND hit sets first_exposure_seq.
+    # STRICT: only an EXACT INBOUND hit sets first_exposure_seq.
     first_ex = exposure_mod.first_exposure(ex, fact_id)
     # …but `read` counts ANY hit on a read-counting channel, in any match form, so
     # read=1 with no exact inbound hit is a spec-mandated state (a lower-cased
     # inbound hit, or a D4 thinking-only hit). fact_trace.schema.json's "A
     # MEASURED read has a position" allOf forbids exactly that combination, which
     # would make every unexplained_possession row unrecordable. Resolution: the
-    # strict §4.5 value is preserved verbatim in extra.first_inbound_exact_seq and
+    # strict value is preserved verbatim in extra.first_inbound_exact_seq and
     # the emitted position falls back to the first read-counting hit, stamped with
     # extra.first_exposure_rule so no aggregate can confuse the two.
     read_hits = [r for r in ex if r.get("counts_toward_read")]
     first_read_hit = min(read_hits, key=lambda r: (r["seq"], r["region_idx"])) if read_hits else None
+
 
     # ── truncation / read_error on a call that could have surfaced the fact ──
     tool_by_id = {r.get("tool_use_id"): r for r in event_rows if r.get("type") == "tool_use"}
@@ -345,7 +345,7 @@ def build_row(run_dir: str | os.PathLike, card: Any, *, exposure_rows: Sequence[
     exposure_rule = ("exact_inbound" if first_ex
                      else ("fallback_first_read_hit" if pos else None))
 
-    # ── mentions and retention (§4.4) ──
+    # ── mentions and retention ──
     ment = probes_mod.mention_by_probe(probe_rows)
     observed = sorted(r["probe_idx"] for r in probe_rows if r.get("raw_response") is not None)
     mentions = sorted(i for i in observed if ment.get(i))
@@ -412,11 +412,10 @@ def build_row(run_dir: str | os.PathLike, card: Any, *, exposure_rows: Sequence[
     elif parse_rate is not None and parse_rate < PARSE_OK_GATE:
         integrity = "parse_degraded"
 
-    # §4.2.2: for every row with read = 1 AND ever_mention = 1,
+    #: for every row with read = 1 AND ever_mention = 1,
     # first_exposure_seq < first_mention_seq. Checked on the EMITTED position, so
     # the invariant covers the thinking-only fallback too.
-    ordering_violation = (
-        read is True and ever_mention
+    ordering_violation = (read is True and ever_mention
         and (pos or {}).get("seq") is not None and first_mention_seq is not None
         and not (pos["seq"] < first_mention_seq)
     )
@@ -516,6 +515,15 @@ def build_row(run_dir: str | os.PathLike, card: Any, *, exposure_rows: Sequence[
         "prior_check_status": meta.get("prior_check_status"),
         "success": _success_of(judge),
         "score_automated": _as_float(judge.get("score")),
+        # THE DENOMINATOR TRAVELS WITH THE SCORE. `score` is computed over the criteria
+        # that were actually GRADED — the right choice, because coercing an unevaluable
+        # criterion to False would report a broken battery as a failed solution. But it
+        # means a 1.0 over 4 of 7 criteria is indistinguishable, on this row, from a 1.0
+        # over 7 of 7, and this row is what the parquet rollup and the notebook read.
+        # Measured: a live run carried score_automated=1.0 with 3 of 7 unevaluable.
+        "criteria_total": _as_int(judge.get("criteria_total")),
+        "criteria_graded": _as_int(judge.get("criteria_graded")),
+        "criteria_errored": _as_int(judge.get("criteria_errored")),
         "phi_used_success": None,
         "analyzable": analyzable,
         "exclusion_reason": exclusion,
@@ -535,14 +543,14 @@ def build_row(run_dir: str | os.PathLike, card: Any, *, exposure_rows: Sequence[
         "cost_usd": tok.get("cost_usd"),
         "tokens_accounting_version": tok.get("accounting_version"),
         "extra": {
-            # The strict §4.5 quantity, always, regardless of what the emitted
+            # The strict quantity, always, regardless of what the emitted
             # first_exposure_seq had to fall back to.
             "first_inbound_exact_seq": (first_ex or {}).get("seq"),
             "first_exposure_rule": exposure_rule,
         },
     }
 
-    # ── §4.2.2: d0-push is asserted, not scanned ──
+    # ──: d0-push is asserted, not scanned ──
     if basis == "manifest_canary":
         measured = {k: row[k] for k in ("first_exposure_seq", "first_exposure_bytes_before")
                     if row[k] is not None}
@@ -570,7 +578,7 @@ def build_row(run_dir: str | os.PathLike, card: Any, *, exposure_rows: Sequence[
 
 
 def assert_d0_push_nulls(row: dict) -> None:
-    """RAISE if a manifest_canary row carries a seq or byte position (§4.2.2).
+    """RAISE if a manifest_canary row carries a seq or byte position.
 
     Auto-loaded CLAUDE.md content appears in neither stream-json, nor the on-disk
     transcript, nor --debug api (S2d), so any seq here would be an artefact of a
@@ -583,8 +591,8 @@ def assert_d0_push_nulls(row: dict) -> None:
     if bad:
         raise D0PushSeqViolation(
             f"d0-push/manifest_canary row {row.get('run_id')} carries non-null "
-            f"exposure position(s) {bad}; §4.2.2 requires all seq/byte fields null"
-        )
+            f"exposure position(s) {bad}; requires all seq/byte fields null"
+    )
 
 
 def _dig(d: dict, *keys: str) -> Any:
@@ -603,12 +611,53 @@ def _as_float(v: Any) -> float | None:
         return None
 
 
+# judge.py's ACTUAL verdict vocabulary. This list used to be
+# ("pass", "passed", "success", "ok") — which judge.py has never emitted. It writes
+# exactly {accepted, partial, rejected, error, timeout}, so the two vocabularies were
+# DISJOINT and `success` came out False on every row of every run, including runs the
+# battery had certified `accepted`. That is a structural constant, not a measurement:
+# the orthogonality gate |phi(used, success)| has zero variance in one variable and
+# cannot be computed, and any "did the context help completion?" analysis reads zero.
+# Verified against a real accepted run before this was changed.
+_VERDICT_SUCCESS = {
+    "accepted": True,       # every criterion met, none unevaluable
+    "rejected": False,      # every graded criterion failed, none unevaluable
+    "timeout": False,       # the agent ran out of wall clock; it did not complete
+    "error": None,          # no criteria, or the battery could not run — not a fact
+    #                         about the solution
+    # "partial" is decided below: it means EITHER a genuine partial result OR a
+    # battery that half-broke, and those are not the same claim.
+}
+# Foreign graders (not judge.py) may write these instead; keep accepting them so a
+# hand-authored or external judge.json still resolves.
+_FOREIGN_SUCCESS = {"pass": True, "passed": True, "success": True, "ok": True,
+                    "fail": False, "failed": False}
+
+
 def _success_of(judge: dict) -> bool | None:
+    """The mechanical verdict as a TRI-STATE, matching `passed`/`met` elsewhere.
+
+    None means "not established", never "no". A `partial` verdict with unevaluable
+    criteria is exactly that: the battery could not decide, so neither can this. It
+    is left null rather than being folded into False, because folding it in would
+    report a broken grader as a failed solution — the failure mode this project has
+    been punished for twice.
+    """
     if not judge:
         return None
     v = judge.get("verdict")
     if isinstance(v, str):
-        return v.lower() in ("pass", "passed", "success", "ok")
+        key = v.strip().lower()
+        if key in _VERDICT_SUCCESS:
+            return _VERDICT_SUCCESS[key]
+        if key in _FOREIGN_SUCCESS:
+            return _FOREIGN_SUCCESS[key]
+        if key == "partial":
+            errored = judge.get("criteria_errored")
+            if isinstance(errored, int) and errored > 0:
+                return None      # undecidable: the battery did not finish deciding
+            return False         # a complete measurement that fell short
+        return None              # an unknown verdict is not a verdict
     return _as_bool(judge.get("success"))
 
 
@@ -703,7 +752,7 @@ def select_cards(cards: Sequence[Any], task_id: str | None, fact_to_task: Mappin
 
     A registry spans every task in the job. Tracing all of them per run was
     measurably wrong in three compounding ways: the other tasks' facts are NOT
-    planted in this workspace, yet §4.1's `available` was reported true for them;
+    planted in this workspace, yet's `available` was reported true for them;
     `fact_trace` grew to one row per (run x REGISTRY fact) instead of D1's one row
     per run, which is the independence assumption the strata and the bootstrap
     resampling unit both rest on; and those extra never-planted rows land in the
@@ -716,6 +765,8 @@ def select_cards(cards: Sequence[Any], task_id: str | None, fact_to_task: Mappin
         return list(cards)
     mine = [c for c in cards if fact_to_task.get(getattr(c, "fact_id", "")) == task_id]
     return mine if mine else list(cards)
+
+
 
 
 def run(run_dir: str | os.PathLike, facts: Any = None, out_path: str | os.PathLike | None = None,
@@ -733,6 +784,7 @@ def run(run_dir: str | os.PathLike, facts: Any = None, out_path: str | os.PathLi
     ex = list(exposure_rows) if exposure_rows is not None else regions_mod.read_jsonl(rd / "exposure.jsonl")
     ev = list(event_rows) if event_rows is not None else regions_mod.read_jsonl(rd / "events.jsonl")
     pr = list(probe_rows) if probe_rows is not None else regions_mod.read_jsonl(rd / "probes.jsonl")
+
 
     rows: list[dict] = []
     diags: list[dict] = []
@@ -760,7 +812,7 @@ def run(run_dir: str | os.PathLike, facts: Any = None, out_path: str | os.PathLi
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    p = argparse.ArgumentParser(description="the fact_trace headline table (§4.4)")
+    p = argparse.ArgumentParser(description="the fact_trace headline table")
     p.add_argument("--run-dir", required=True)
     p.add_argument("--facts", default=None)
     p.add_argument("--out", default=None)

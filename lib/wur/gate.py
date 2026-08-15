@@ -6,8 +6,8 @@ RESPONSIBILITY
   Be the one process the agent's tool calls pass through, and never be the reason
   a run dies. Two modes and no more: `pre` (the barrier) and `session-start` (the
   marker). There is deliberately NO post mode — PostToolUse does not fire when a
-  tool errors, its `tool_response` is not what the model saw (V6), and hooks are
-  forbidden from carrying model-visible text (§5.1(1)), so a post hook would cost
+  tool errors, its `tool_response` is not what the model saw, and hooks are
+  forbidden from carrying model-visible text, so a post hook would cost
   a fork per tool call to observe nothing trustworthy.
 
   This module is also the drop-in replacement for the deleted
@@ -30,15 +30,15 @@ OUTPUTS
   stdout  exactly one JSON object: `{}` to allow, or the PreToolUse deny object
           when the driver said deny. Nothing else, ever.
   $RUN_DIR/gate/tool_calls.jsonl   flock'd append, one row per barrier fire:
-          {ts, barrier, tool_use_id, tool_name, tool_input, ...} (STATUS.md §3).
+          {ts, barrier, tool_use_id, tool_name, tool_input, ...}.
   $RUN_DIR/gate/req/<tid>.json     the barrier request the driver answers.
   $RUN_DIR/gate/anomalies.jsonl    gate_timeout / sidechain_barrier / hook_error.
   $RUN_DIR/watch/hooks_alive       SessionStart marker — the driver aborts if it
-          does not appear within 90 s (V12: a settings file that fails validation
+          does not appear within 90 s (a settings file that fails validation
           is silently ignored in --print mode, yielding zero hooks and no error).
   $RUN_DIR/watch/transcript_path   the on-disk transcript path, from the payload.
 
-THE SEVEN-STEP CONTROL FLOW IS NORMATIVE (§6.2)
+THE SEVEN-STEP CONTROL FLOW IS NORMATIVE
   1. read payload; tid = payload["tool_use_id"]; parent_tool_use_id set ⇒ record
      it and stamp probe_integrity: "sidechain_barrier";
   2. flock + append to gate/tool_calls.jsonl;
@@ -50,12 +50,12 @@ THE SEVEN-STEP CONTROL FLOW IS NORMATIVE (§6.2)
      and log gate_timeout;
   7. always exit 0, never write stderr.
 
-  Blocking here is safe (V11: hooks are synchronous, a 3 s sleep hook moved wall
+  Blocking here is safe (hooks are synchronous, a 3 s sleep hook moved wall
   time 14.09 s → 26.96 s over 3 tool calls with strict enter/exit pairing) but it
   is only ever safe in ONE direction: the driver must inject on stdin and THEN
   release the barrier. Holding the barrier until the model answers DEADLOCKS —
   20 s held produced zero child output and the injected message was not even
-  replayed until the hook returned (V13). No response written into gate/resp/ may
+  replayed until the hook returned. No response written into gate/resp/ may
   depend on model output.
 
 FAIL-OPEN IS THE WHOLE CONTRACT
@@ -84,7 +84,7 @@ GATE_SCHEMA_VERSION = "1"
 
 #: Barrier poll timeout. job.yaml probe.gate_timeout_ms overrides it per job.
 DEFAULT_TIMEOUT_MS = 300_000
-#: §6.2 step 4, verbatim: poll every 5 ms.
+#: step 4, verbatim: poll every 5 ms.
 DEFAULT_POLL_MS = 5
 #: SessionStart and log mode never block; this bounds a pathological filesystem.
 MODES = ("auto", "barrier", "log")
@@ -103,7 +103,7 @@ _FILENAME_SAFE = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012345
 def silence_stderr() -> None:
     """Point fd 2 at /dev/null so nothing this process does can reach stderr.
 
-    §5.1(1): hooks print exactly `{}` and write nothing to stderr. Redirecting
+: hooks print exactly `{}` and write nothing to stderr. Redirecting
     the file descriptor (not just sys.stderr) also covers interpreter-level
     tracebacks and anything a C extension might emit.
     """
@@ -132,7 +132,7 @@ def deny_object(reason: str) -> dict[str, Any]:
     """The PreToolUse deny object, in the shape measured to reach the model.
 
     This deny reason is the ONLY hook-authored text that ever reaches the model
-    (§5.1(1)). It is a control action, not a channel: V14 measured that the model
+. It is a control action, not a channel: V14 measured that the model
     treats deny-reason text as prompt injection, refuses it, and RE-ISSUES the
     same tool call, which then succeeds. Budget stop is therefore
     deny-every-subsequent-call plus closing stdin, and a denied call costs TWO
@@ -150,6 +150,8 @@ def deny_object(reason: str) -> dict[str, Any]:
 # ── small filesystem helpers (all best-effort, all silent) ───────────────────
 def _utc_iso(ts: float) -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(ts)) + f".{int((ts % 1) * 1000):03d}Z"
+
+
 
 
 def _safe_key(tid: str, fallback: str) -> str:
@@ -220,18 +222,18 @@ def _protocol():
         return None
 
 
-# ── the flock'd writers (§5.1(4): one writer per file) ───────────────────────
+# ── the flock'd writers (one writer per file) ────────────────────────
 def _locked_append(gate_dir: str, filename: str, row: dict[str, Any], *,
                    ordinal_field: str | None = None, count_key: str | None = None,
                    repeats_field: str | None = None) -> tuple[int, int]:
     """Append one JSON row under an exclusive flock. Returns (ordinal, key_repeats).
 
     `ordinal` is 1-based and counts the lines already in the file plus this one —
-    the authoritative barrier index (STATUS.md §3). It is knowable only while the
+    the authoritative barrier index. It is knowable only while the
     lock is held, so it is stamped into the row here (`ordinal_field`) rather than
     by the caller. `key_repeats` counts prior occurrences of `count_key` in the
     raw file, which is how a tool call re-issued after a deny becomes visible
-    (V14) without parsing every row.
+ without parsing every row.
 
     V8 measured that unlocked hook writes lose increments (6 fires → 5) and that
     appends larger than PIPE_BUF interleave into unparseable lines, so the lock
@@ -282,7 +284,7 @@ def log_anomaly(gate_dir: str, kind: str, detail: dict[str, Any] | None = None) 
     """Append one row to gate/anomalies.jsonl. Never raises.
 
     The home for everything the barrier notices but must not act on:
-    gate_timeout (§6.2 step 6), sidechain_barrier (§6.2 step 1), hook_error.
+    gate_timeout (step 6), sidechain_barrier (step 1), hook_error.
     """
     row = {
         "schema_version": GATE_SCHEMA_VERSION,
@@ -302,7 +304,7 @@ def log_anomaly(gate_dir: str, kind: str, detail: dict[str, Any] | None = None) 
 def barrier_row(payload: dict[str, Any], *, ts: float, mode: str) -> dict[str, Any]:
     """The tool_calls.jsonl row for one PreToolUse fire, minus the ordinal.
 
-    Shape is STATUS.md §3 ({ts, barrier, tool_use_id, tool_name, tool_input})
+    Shape is  ({ts, barrier, tool_use_id, tool_name, tool_input})
     plus the fields events.py needs to join and to detect the two conditions the
     join cannot infer: a sidechain barrier, and a re-issued tool_use_id.
     """
@@ -386,7 +388,7 @@ def wait_for_response(gate_dir: str, key: str, *, timeout_ms: int, poll_ms: int
                       ) -> tuple[str, str, float]:
     """Block until the driver answers this barrier. Returns (decision, reason, waited_s).
 
-    decision is "allow", "deny" or "timeout". The 5 ms poll is §6.2 step 4.
+    decision is "allow", "deny" or "timeout". The 5 ms poll is step 4.
 
     PRECEDENCE, and it matters: `gate/resp/<key>.json` if it is there when a poll
     looks, otherwise `gate/broadcast.json`. Since run_pre() moves a stale response
@@ -449,7 +451,7 @@ def run_pre(payload: dict[str, Any], gate_dir: str, *, mode: str = "barrier",
         return ALLOW
 
     # 4 — publish the request, then block. The response slot is cleared FIRST:
-    # a denied call is re-issued by the model under the SAME tool_use_id (V14),
+    # a denied call is re-issued by the model under the SAME tool_use_id,
     # so a leftover answer from the previous fire would decide this one, and a
     # driver polling for "requests without a response" would never see the retry
     # at all. Standing orders belong in broadcast.json, not in a stale resp file.

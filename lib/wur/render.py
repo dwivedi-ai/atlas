@@ -4,10 +4,10 @@ render.py — one canonical fact, three presentations, identical content.
 
 RESPONSIBILITY
   Turn ONE CanonicalFact into prose / checklist / table renderings whose
-  *content is byte-identical modulo layout*, so the §7.1 format contrast
+  *content is byte-identical modulo layout*, so the format contrast
   (`d2` vs `d2-check` vs `d2-table`) varies presentation and nothing else. If the
   three renderings said even slightly different things, "format sensitivity"
-  (STATUS.md §5) would be measuring content, and the answer to "prose, checklist,
+ would be measuring content, and the answer to "prose, checklist,
   or table?" would be an artifact of whoever wrote the fixture.
 
   Also owns the two length disciplines the measurement depends on:
@@ -19,7 +19,7 @@ RESPONSIBILITY
       when it is in fact "never exposed".
     * LINE CAP — MAX_PLANT_LINES = 200, kept as a structural discipline only.
       It is explicitly NOT the mitigation: a 200-byte-line file was cut at line
-      108, so a line cap measurably mitigates nothing (IMPLEMENTATION.md §4.2.2).
+      108, so a line cap measurably mitigates nothing.
       The byte cap is the one that binds.
 
 INPUTS
@@ -62,7 +62,7 @@ except ImportError:  # pragma: no cover - exercised when run as a script
 
 RENDERER_VERSION = "wur-render-v1"
 
-# §4.2.2 / V16. The byte cap binds; the line cap is discipline, not mitigation.
+# / V16. The byte cap binds; the line cap is discipline, not mitigation.
 MAX_PLANT_BYTES = 20_000
 MAX_PLANT_LINES = 200
 
@@ -122,7 +122,7 @@ class Clause:
 
 @dataclass(frozen=True)
 class Distractor:
-    """A confusable-but-wrong convention, planted only in `d2-dist` (§7.1)."""
+    """A confusable-but-wrong convention, planted only in `d2-dist`."""
 
     token: str
     statement: str
@@ -195,6 +195,8 @@ class CanonicalFact:
 def _para(sentences: Iterable[str]) -> str:
     body = " ".join(s for s in sentences if s)
     return textwrap.fill(body, width=PROSE_WIDTH, break_long_words=False, break_on_hyphens=False)
+
+
 
 
 def _sentence(text: str) -> str:
@@ -280,7 +282,7 @@ def render_all(
     }
 
 
-# ── the CLAUDE.md carriers (§7.1: d0-push and d1-ptr) ────────────────────────
+# ── the CLAUDE.md carriers (d0-push and d1-ptr) ─────────────────────────
 IMPORT_STUB_TITLE = "Project notes"
 POINTER_TITLE = "Project notes"
 
@@ -292,11 +294,11 @@ def render_claude_md(regime: str, notes_rel: str) -> str:
               resolves the import and the content is auto-loaded, appearing in
               neither stream-json nor the on-disk transcript — which is why
               `d0-push` exposure is ASSERTED from the manifest and verified
-              out-of-band by the autoload canary (§4.2.2).
+              out-of-band by the autoload canary.
     `prose`   a pointer with no import: it names the file and says it matters,
               and deliberately carries NO `@` reference, because an import stub
               is simultaneously a pointer AND a push, and `d1-ptr` exists
-              precisely to split that confound (§7.1).
+              precisely to split that confound.
     `none`    no CLAUDE.md at all.
 
     Neither variant may carry the fact itself — plant.py re-checks that with the
@@ -326,7 +328,7 @@ def render_claude_md(regime: str, notes_rel: str) -> str:
     return text
 
 
-# ── skeleton filler (§7.1 skeleton matching) ─────────────────────────────────
+# ── skeleton filler (skeleton matching) ─────────────────────────────────
 _FILLER_LINES = (
     "This directory is part of the repository's documentation tree.",
     "Files here describe how the code is organised; they do not change behaviour.",
@@ -337,7 +339,7 @@ _FILLER_LINES = (
 def render_filler(rel_path: str) -> str:
     """Deterministic, nonce-free filler so git tracks a skeleton directory.
 
-    §7.1: `docs/`, `docs/internal/` and `docs/internal/memory/` exist in EVERY
+: `docs/`, `docs/internal/` and `docs/internal/memory/` exist in EVERY
     arm including both controls. Git cannot track an empty directory, so each
     level carries one of these. The content is a pure function of the path, which
     means the filler is BYTE-IDENTICAL across arms — if it were not, the skeleton
@@ -350,7 +352,7 @@ def render_filler(rel_path: str) -> str:
     return text
 
 
-# ── the control twin (§7.1 `ctrl`) ───────────────────────────────────────────
+# ── the control twin ( `ctrl`) ───────────────────────────────────────────
 # Plausible, fact-free workspace conventions. Deliberately about house style
 # rather than behaviour, so no `used` detector in the closed 6-predicate registry
 # can fire on them — a control that trips a detector is a spurious fire, which is
@@ -447,7 +449,7 @@ def control_fact(
 ) -> CanonicalFact:
     """The fact-free twin planted in `ctrl` (and `ctrl-np`).
 
-    `ctrl` isolates the fact's CONTENT from the mere existence of the file (D3),
+    `ctrl` isolates the fact's CONTENT from the mere existence of the file,
     so the twin must have the same shape — same title slot, same clause labels,
     comparable length — and none of the meaning. If a hand-authored `control:`
     block is present in facts.yaml it is used verbatim (strongly preferred); the
@@ -591,7 +593,7 @@ def assert_within_caps(
 ) -> dict:
     """Raise RenderTooLong unless the document fits both plant caps.
 
-    The byte cap is the one that binds (V16): below the 256 KB `Read` ceiling,
+    The byte cap is the one that binds: below the 256 KB `Read` ceiling,
     truncation is completely silent — no ellipsis, no marker, nothing in
     stream.jsonl — and the observed cut point ran as low as 21,600 bytes.
     """
@@ -666,8 +668,8 @@ def assert_length_balanced(
     """Raise RenderDrift if the formats differ in length by more than tolerance.
 
     Content is identical by construction, so a content-word spread means one
-    layout is adding material — and "format sensitivity" (STATUS.md §5) would
-    then be partly a length effect, which §7.1 has no arm to separate. The raw
+    layout is adding material — and "format sensitivity" would
+    then be partly a length effect, which has no arm to separate. The raw
     bound is deliberately loose: a table really does cost more tokens than a
     paragraph, and that cost is part of the arm, not a defect in it.
     """
@@ -694,7 +696,7 @@ def render_report(
 ) -> dict:
     """The `_index/render_report.json` entry for one fact: lengths + balance.
 
-    §6.3 requires length to be controlled AND reported; this is the reported half.
+ requires length to be controlled AND reported; this is the reported half.
     """
     rendered = dict(texts) if texts is not None else render_all(fact, distractors=distractors)
     bal = length_balance(rendered)

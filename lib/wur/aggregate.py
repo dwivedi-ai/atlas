@@ -15,7 +15,7 @@ RESPONSIBILITY
       lists -> a *_json column plus a count), because parquet-of-structs is not
       readable from a CSV mirror and the CSV mirror is what survives a pandas
       major version;
-    - per-probe mention tiers (§4.5 (a) exact nonce, (b) frozen paraphrase regex,
+    - per-probe mention tiers ( (a) exact nonce, (b) frozen paraphrase regex,
       primary = a OR b) are folded up from the three slots, because that fold is
       a definition in the spec and not a modelling choice.
 
@@ -27,7 +27,7 @@ INPUTS
   <run>/run_record.json                     identity fallback only (never a metric)
   Run dirs are discovered under $JOB_DIR/runs/ AND
   $ATLAS_RUNS_ROOT/<job_id>/ (default /tmp/atlas-runs) — WUR moves run roots out
-  of the job dir so no secret is an ancestor of a workspace (V9).
+  of the job dir so no secret is an ancestor of a workspace.
 
 OUTPUTS
   <out>/fact_trace.parquet + .csv
@@ -45,7 +45,7 @@ PARQUET DTYPES ARE NOT COSMETIC
   and is asserted by tests/test_wur_lib.py.
 
 PATH NOTE (departure, deliberate)
-  IMPLEMENTATION.md §5.2 and STATUS.md §6 write the destination as a bare
+  The original design wrote the destination as a bare
   `analysis/*.parquet`. Taken literally, two jobs aggregated in a row overwrite
   each other's tables with no warning. Default output is therefore job-scoped,
   `$JOB_DIR/analysis/`; `--out-dir analysis` reproduces the document's literal
@@ -62,11 +62,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
 import sys
 from pathlib import Path
-from typing import Any, Iterable, Iterator, Sequence
+from typing import Any, Iterable, Sequence
 
 AGGREGATE_VERSION = "wur-aggregate-v1"
 
@@ -83,8 +84,7 @@ SOURCE_FILES = {
 #: Columns that MUST be pandas Int64 (nullable integer), never float64.
 #: Anything that can be null and is compared against None belongs here.
 INT64_COLUMNS: dict[str, tuple[str, ...]] = {
-    "fact_trace": (
-        "rep", "factor_distractors",
+    "fact_trace": ("rep", "factor_distractors",
         "first_exposure_seq", "first_exposure_bytes_before", "first_used_seq",
         "first_mention_seq", "first_mention_probe", "last_mention_probe",
         "mention_run_length", "n_reinjections", "first_use_probe_index",
@@ -93,16 +93,14 @@ INT64_COLUMNS: dict[str, tuple[str, ...]] = {
         "tokens_input", "tokens_output", "tokens_cache_read", "tokens_cache_write",
         "tokens_effective",
     ),
-    "probes": (
-        "rep", "probe_idx", "sent_at_barrier", "planned_at_barrier",
+    "probes": ("rep", "probe_idx", "sent_at_barrier", "planned_at_barrier",
         "sampled_interval", "sent_seq", "answer_seq", "tokens_out",
         "n_parse_errors", "n_slots", "n_slots_matched",
         "n_critical_fact_slots", "n_filler_slots", "n_distrusted_slots",
         "n_empty_slots", "n_task_restatement_slots", "n_generic_workspace_slots",
         "n_probe_turn_seq",
     ),
-    "events": (
-        "seq", "turn_idx", "barrier", "result_bytes", "tokens_in", "tokens_out",
+    "events": ("seq", "turn_idx", "barrier", "result_bytes", "tokens_in", "tokens_out",
         "n_nonce_hits", "n_inbound_hits",
     ),
 }
@@ -111,15 +109,13 @@ INT64_COLUMNS: dict[str, tuple[str, ...]] = {
 #: load-bearing one: null means UNKNOWN (a truncated or errored read on the fact
 #: file) and coercing it to False would make the bias run with the hypothesis.
 BOOL_COLUMNS: dict[str, tuple[str, ...]] = {
-    "fact_trace": (
-        "available", "read", "read_inbound_only", "unexplained_possession",
+    "fact_trace": ("available", "read", "read_inbound_only", "unexplained_possession",
         "opened", "read_censored", "read_error", "echoed", "thinking_echo",
         "used", "used_in_diff", "eligible", "ever_mention", "retention_censored",
         "wrong_value_in_slot", "success", "analyzable", "quarantined",
         "factor_fact_present", "factor_probe",
     ),
-    "probes": (
-        "parse_ok", "retry_sent", "answered_after_retry", "probe_id_match",
+    "probes": ("parse_ok", "retry_sent", "answered_after_retry", "probe_id_match",
         "fidelity_agree", "mention_tier_a", "mention_tier_b", "mention_primary",
         "mention_llm",
     ),
@@ -141,7 +137,7 @@ SLOT_CLASSES = ("critical_fact", "task_restatement", "generic_workspace",
 
 #: Channels that count as INBOUND exposure. self_thinking is model-visible but
 #: NOT inbound — that is the D4 carve-out that sets `read` while leaving
-#: `read_inbound_only` alone (§4.2.1). Kept here only to count hits per event;
+#: `read_inbound_only` alone. Kept here only to count hits per event;
 #: the funnel decision itself is trace.py's, never this module's.
 INBOUND_CHANNELS = frozenset({
     "autoload_claude_md", "tool_read", "tool_grep_content", "tool_glob_filenames",
@@ -208,7 +204,7 @@ def iter_run_dirs(job_dir: str | os.PathLike,
                   runs_root: str | os.PathLike | None = None) -> list[Path]:
     """Every directory that looks like a finished run of this job.
 
-    Two roots, because WUR moved run roots out of the job dir (V9: under
+    Two roots, because WUR moved run roots out of the job dir (under
     bypassPermissions the agent read a registry sitting three `..` hops above the
     workspace) while ladder runs still live in $JOB_DIR/runs/.
     """
@@ -323,14 +319,13 @@ def flatten_probe(row: dict, ident: dict, run_dir: Path) -> dict:
             out[f"slot{i}_{k}"] = slot.get(k)
     out["n_slots"] = len(slots)
 
-    # §4.5 mention ladder, folded from the three slots. PRIMARY = (a) OR (b).
+    # mention ladder, folded from the three slots. PRIMARY = (a) OR (b).
     out["mention_tier_a"] = _any_true(s.get("match_nonce") for s in slots if isinstance(s, dict))
     out["mention_tier_b"] = _any_true(s.get("match_regex") for s in slots if isinstance(s, dict))
     out["mention_llm"] = _any_true(s.get("match_llm") for s in slots if isinstance(s, dict))
     primary = _any_true([out["mention_tier_a"], out["mention_tier_b"]])
     out["mention_primary"] = primary
-    out["n_slots_matched"] = sum(
-        1 for s in slots
+    out["n_slots_matched"] = sum(1 for s in slots
         if isinstance(s, dict) and (s.get("match_nonce") is True or s.get("match_regex") is True)
     )
 
@@ -361,12 +356,10 @@ def flatten_event(row: dict, ident: dict, run_dir: Path) -> dict:
     hits = row.get("nonce_hits") if isinstance(row.get("nonce_hits"), list) else []
     out["nonce_hits_json"] = _as_json(hits)
     out["n_nonce_hits"] = len(hits)
-    out["n_inbound_hits"] = sum(
-        1 for h in hits
-        if isinstance(h, dict) and (
-            h.get("inbound") is True
+    out["n_inbound_hits"] = sum(1 for h in hits
+        if isinstance(h, dict) and (h.get("inbound") is True
             or (h.get("inbound") is None and h.get("channel") in INBOUND_CHANNELS)
-        )
+    )
     )
     out["nonce_fact_ids"] = "|".join(
         sorted({str(h.get("fact_id")) for h in hits if isinstance(h, dict) and h.get("fact_id")})
@@ -435,7 +428,7 @@ def collect(job_dir: str | os.PathLike,
 def accounting_census(fact_trace_rows: Sequence[dict]) -> dict[str, int]:
     """How many rows carry each tokens_accounting_version. More than one generation
     in a job is a POOLING HAZARD: per_line_v1 input is inflated 1.00x-4.90x
-    (median 1.50x) against per_message_v2 (V7), so the two must never be summed."""
+    (median 1.50x) against per_message_v2, so the two must never be summed."""
     census: dict[str, int] = {}
     for r in fact_trace_rows:
         key = r.get("tokens_accounting_version") or "unset"
@@ -507,6 +500,54 @@ def write_tables(tables: dict[str, Sequence[dict]], out_dir: str | os.PathLike,
     return report
 
 
+def backfill_orthogonality(rows: list[dict]) -> int:
+    """Fill `phi_used_success` per task, in place. Returns the number of rows filled.
+
+    φ(used, success) is a property of a TASK across its runs, and `trace.py` sees one
+    run at a time — so it writes `null` and nothing ever filled it in. A schema field
+    that is permanently null is the same shape of problem as a constant column: it
+    reads as "no correlation was found" rather than "nobody computed one". This is
+    the first point in the pipeline that holds every run of a task at once.
+
+    The gate itself (G11, |φ| > 0.8 ⇒ the fact is not orthogonal to acceptance and is
+    discarded) lives in pilot_triage.gate_orthogonality and is unchanged; this only
+    puts the same number on the row so the rollup is self-contained.
+
+    φ is `None` — never 0.0 — when either margin is degenerate. An undefined
+    correlation is not an uncorrelated one, and that distinction is exactly what was
+    lost while `success` was constant.
+    """
+    from collections import defaultdict  # noqa: PLC0415
+
+    by_task: dict[Any, list[dict]] = defaultdict(list)
+    for r in rows:
+        by_task[r.get("task_id")].append(r)
+    filled = 0
+    for task_rows in by_task.values():
+        pairs = [(bool(r.get("used")), bool(r.get("success"))) for r in task_rows
+                 if r.get("used") is not None and r.get("success") is not None]
+        phi = _phi_2x2(pairs)
+        for r in task_rows:
+            r["phi_used_success"] = phi
+            filled += 1
+    return filled
+
+
+def _phi_2x2(pairs: Sequence[tuple[bool, bool]]) -> float | None:
+    """Pearson φ on a 2×2. Byte-for-byte the same rule as
+    pilot_triage._phi — kept in step deliberately, and asserted by
+    tests/test_wur_lib.py so the rollup and the gate can never disagree."""
+    if len(pairs) < 2:
+        return None
+    n11 = sum(1 for u, s in pairs if u and s)
+    n10 = sum(1 for u, s in pairs if u and not s)
+    n01 = sum(1 for u, s in pairs if not u and s)
+    n00 = sum(1 for u, s in pairs if not u and not s)
+    num = n11 * n00 - n10 * n01
+    den = math.sqrt((n11 + n10) * (n01 + n00) * (n11 + n01) * (n10 + n00))
+    return (num / den) if den > 0 else None
+
+
 def aggregate(job_dir: str | os.PathLike, out_dir: str | os.PathLike | None = None,
               runs_root: str | os.PathLike | None = None, *,
               parquet: bool = True, csv: bool = True) -> dict[str, Any]:
@@ -514,6 +555,7 @@ def aggregate(job_dir: str | os.PathLike, out_dir: str | os.PathLike | None = No
     jd = Path(job_dir).resolve()
     od = Path(out_dir) if out_dir else jd / "analysis"
     collected = collect(jd, runs_root)
+    backfill_orthogonality(collected["tables"].get("fact_trace", []))
     written = write_tables(collected["tables"], od, parquet=parquet, csv=csv)
     census = accounting_census(collected["tables"].get("fact_trace", []))
     manifest = {
@@ -561,7 +603,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if manifest["mixed_accounting_versions"]:
         print("WARNING: this job mixes tokens.accounting_version generations "
               f"{manifest['tokens_accounting_census']} — per_line_v1 input is inflated "
-              "1.00x-4.90x against per_message_v2 (V7). Do not pool token figures.",
+              "1.00x-4.90x against per_message_v2. Do not pool token figures.",
               file=sys.stderr)
     rc = 0
     if manifest["tables"]["fact_trace"]["rows"] == 0:

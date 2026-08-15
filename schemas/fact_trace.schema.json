@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "fact_trace.schema.json",
   "title": "WurFactTrace",
-  "description": "One row of $RUN_DIR/fact_trace.jsonl \u2014 one (run x fact) \u2014 produced by lib/wur/trace.py by joining events.jsonl, exposure.jsonl, probes.jsonl and use_detect.json. THE HEADLINE TABLE: everything else exists to produce it, and it places one run at one point in the funnel available -> read -> used -> retained (STATUS.md \u00a74.4). With one fact per task (D1) there is exactly one row per run, which is what makes the rows independent strata for every significance test and the resampling unit for the bootstrap. One JSON object per line; validate line by line. When materialized to parquet, every nullable *_seq / *_probe / *_index column MUST be declared Int64 (pandas nullable), not the default float64 \u2014 a d0-push row's null first_exposure_seq otherwise round-trips as NaN and defeats trace.py's own null assertion.",
+  "description": "One row of $RUN_DIR/fact_trace.jsonl \u2014 one (run x fact) \u2014 produced by lib/wur/trace.py by joining events.jsonl, exposure.jsonl, probes.jsonl and use_detect.json. THE HEADLINE TABLE: everything else exists to produce it, and it places one run at one point in the funnel available -> read -> used -> retained . With one fact per task there is exactly one row per run, which is what makes the rows independent strata for every significance test and the resampling unit for the bootstrap. One JSON object per line; validate line by line. When materialized to parquet, every nullable *_seq / *_probe / *_index column MUST be declared Int64 (pandas nullable), not the default float64 \u2014 a d0-push row's null first_exposure_seq otherwise round-trips as NaN and defeats trace.py's own null assertion.",
   "type": "object",
   "required": [
     "schema_version",
@@ -32,7 +32,7 @@
   "additionalProperties": false,
   "$defs": {
     "channel": {
-      "description": "The closed channel enum of IMPLEMENTATION.md \u00a74.2.2, duplicated verbatim from events.schema.json \u2014 the two must stay in sync. unknown_visible fails CI.",
+      "description": "The closed channel enum, duplicated verbatim from events.schema.json \u2014 the two must stay in sync. unknown_visible fails CI.",
       "anyOf": [
         {
           "type": "string",
@@ -227,14 +227,14 @@
       "type": "boolean"
     },
     "read": {
-      "description": "PRIMARY exposure (D4): inbound channels UNION self_thinking. Null means UNKNOWN \u2014 a truncation hit a call targeting the fact file, or the 256 KB Read ceiling errored one. Never coerce unknown to false: wide searches truncate and deep facts are found by wide searches, so the bias runs WITH the hypothesis (\u00a74.2.2).",
+      "description": "PRIMARY exposure: inbound channels UNION self_thinking. Null means UNKNOWN \u2014 a truncation hit a call targeting the fact file, or the 256 KB Read ceiling errored one. Never coerce unknown to false: wide searches truncate and deep facts are found by wide searches, so the bias runs WITH the hypothesis (\u00a74.2.2).",
       "type": [
         "boolean",
         "null"
       ]
     },
     "read_status": {
-      "description": "The resolved outcome behind `read`. read_error is the hard 256 KB Read ceiling (is_error:true, no content, no sidecar) \u2014 neither read=0 nor read=unknown-via-truncation (V16).",
+      "description": "The resolved outcome behind `read`. read_error is the hard 256 KB Read ceiling (is_error:true, no content, no sidecar) \u2014 neither read=0 nor read=unknown-via-truncation.",
       "type": "string",
       "enum": [
         "read",
@@ -262,7 +262,7 @@
       ]
     },
     "read_censored": {
-      "description": "Truncation hit a call targeting the fact file. Sole Read trigger is file.numLines < file.totalLines SOURCED FROM transcript.jsonl \u2014 stream.jsonl carries no truncation information and toolUseResult.file.truncated is None on every read (V16).",
+      "description": "Truncation hit a call targeting the fact file. Sole Read trigger is file.numLines < file.totalLines SOURCED FROM transcript.jsonl \u2014 stream.jsonl carries no truncation information and toolUseResult.file.truncated is None on every read.",
       "type": "boolean"
     },
     "read_error": {
@@ -459,8 +459,32 @@
       "minimum": 0,
       "maximum": 1
     },
+    "criteria_total": {
+      "description": "The denominator behind `score_automated`. `score` is computed over the criteria that were actually GRADED, because coercing an unevaluable criterion to False would report a broken battery as a failed solution -- so a 1.0 over 4 of 7 criteria is otherwise indistinguishable on this row from a 1.0 over 7 of 7, and this row is what the parquet rollup and the notebook read. Measured on a live run: score_automated 1.0 with 3 of 7 unevaluable. Null when the run has no judge.json.",
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "criteria_graded": {
+      "description": "Criteria that produced a True/False verdict.",
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "criteria_errored": {
+      "description": "Criteria that could not be evaluated at all (eval error, timeout, missing command). Non-zero means `score_automated` is a partial measurement.",
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
     "phi_used_success": {
-      "description": "Orthogonality gate: |phi| > 0.8 per task means the fact is not orthogonal to acceptance, and the fact is discarded.",
+      "description": "Orthogonality gate: |phi| > 0.8 per task means the fact is not orthogonal to acceptance, and the fact is discarded. phi(used, success) is a property of a TASK across its runs, so trace.py -- which sees one run at a time -- writes null here and aggregate.py backfills it when it rolls the job up. Null on a raw per-run fact_trace.jsonl is therefore EXPECTED; null after aggregation means the correlation is undefined (a degenerate margin), which is not the same as uncorrelated and must never be read as 0.0. The gate itself is pilot_triage.gate_orthogonality (G11); aggregate._phi_2x2 is held byte-identical to its _phi by tests/test_wur_lib.py.",
       "type": [
         "number",
         "null"
@@ -473,7 +497,7 @@
       "type": "boolean"
     },
     "exclusion_reason": {
-      "description": "Closed enum, extended from STATUS.md \u00a74.4's open list so a typo cannot silently create a new exclusion class. Use `other` plus a note in `extra` for anything genuinely new; promoting it here is a reviewed schema change.",
+      "description": "Closed enum, extended from the original open list so a typo cannot silently create a new exclusion class. Use `other` plus a note in `extra` for anything genuinely new; promoting it here is a reviewed schema change.",
       "type": [
         "string",
         "null"
@@ -540,7 +564,7 @@
       "minimum": 0
     },
     "turns_total": {
-      "description": "Distinct assistant message ids, NOT line count \u2014 measured 13.67x apart at the extreme (V17). Assistant-only: user lines carry no message.id.",
+      "description": "Distinct assistant message ids, NOT line count \u2014 measured 13.67x apart at the extreme. Assistant-only: user lines carry no message.id.",
       "type": [
         "integer",
         "null"

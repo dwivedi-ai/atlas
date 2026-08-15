@@ -6,12 +6,12 @@ RESPONSIBILITY
   Produce $RUN_DIR/settings.json: the ONLY source of this run's hooks, and the
   file that replaced the global ~/.claude/settings.json mutation which used to
   serialize the whole matrix (setup_run.sh:117-145). Per-run CLAUDE_CONFIG_DIR +
-  per-run --settings is what makes JOBS <= 4 possible at all (S3).
+  per-run --settings is what makes JOBS <= 4 possible at all.
 
   Two hooks, no more: PreToolUse (the barrier, matcher "*") and SessionStart (the
   liveness marker). There is no PostToolUse hook and no Stop hook — PostToolUse
   does not fire when a tool errors and its tool_response is not what the model
-  saw (V6), so it would cost a fork per tool call to observe nothing trustworthy.
+  saw, so it would cost a fork per tool call to observe nothing trustworthy.
 
   Both hook commands are ARGV-BOUND. The child is launched under
   `env -u ANTHROPIC_API_KEY`, and a run whose instrumentation depended on which
@@ -31,7 +31,7 @@ OUTPUTS
   render_settings() -> Path   the path it wrote
   settings_sha256()           the stamp callers put in run_meta.json
 
-WHY THE RENDERER VALIDATES ITS OWN OUTPUT (V12)
+WHY THE RENDERER VALIDATES ITS OWN OUTPUT
   `claude --help` states that in --print mode "settings files that fail
   validation are silently ignored". A templating bug therefore yields zero hooks,
   zero barriers, zero probes and NO ERROR ANYWHERE — a run that looks fine and
@@ -109,6 +109,10 @@ def _python_exe(explicit: str | None = None) -> str:
     if not found:
         raise SettingsError("no python3 interpreter to bind into the hook command")
     return found
+
+
+
+
 
 
 def pre_command(run_dir: str | os.PathLike[str], *, gate_py: str | os.PathLike[str] = GATE_PATH,
@@ -332,7 +336,7 @@ def render_settings(run_dir: str | os.PathLike[str], *,
     """Write $RUN_DIR/settings.json and prove it is loadable and correct.
 
     Raises SettingsError rather than returning a path to a file the CLI would
-    silently ignore (V12). Also creates gate/req, gate/resp and watch/ so the
+    silently ignore. Also creates gate/req, gate/resp and watch/ so the
     first barrier does not race the driver over mkdir.
     """
     run_dir = Path(run_dir)

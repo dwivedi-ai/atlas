@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "exposure.schema.json",
   "title": "WurExposure",
-  "description": "One row of $RUN_DIR/exposure.jsonl (STATUS.md \u00a74.2): one (fact x model-visible region) hit. `model_visible` and `channel_inbound` are fixed per channel; `inbound` is the EFFECTIVE value after regions.py forces it off for a tool error body (harness-authored text is not a workspace channel). Only exact inbound hits set first_exposure_seq.",
+  "description": "One row of $RUN_DIR/exposure.jsonl (one row per fact x model-visible region) hit. `model_visible` and `channel_inbound` are fixed per channel; `inbound` is the EFFECTIVE value after regions.py forces it off for a tool error body (harness-authored text is not a workspace channel). Only exact inbound hits set first_exposure_seq.",
   "type": "object",
   "required": [
     "schema_version",

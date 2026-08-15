@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-pilot_triage.py — the §10 pilot gates, evaluated across a whole job.
+pilot_triage.py — the pilot gates, evaluated across a whole job.
 
 RESPONSIBILITY
   Answer one question with one exit code: MAY THE MAIN RUN START? IMPLEMENTATION
-  .md §10 pre-registers thirteen gates and says any failure blocks the 720-run
+  .md pre-registers thirteen gates and says any failure blocks the 720-run
   matrix. reconcile.py already checks the per-run half of them one run at a time;
   this module is the job-level judgment — rates across runs, ceilings across
   tasks, and the fixture-wide alarms that are meaningless at n = 1.
@@ -57,7 +57,7 @@ except ImportError:  # flat context (lib/wur on sys.path)
 
 TRIAGE_VERSION = "wur-pilot-triage-v1"
 
-# §10 thresholds, in one place so a decision rule cannot drift from the document.
+# thresholds, in one place so a decision rule cannot drift from the document.
 CONFAB_MAX = 0.05
 UNEXPLAINED_POSSESSION_MAX = 0.05
 READ_D1_MIN = 0.50
@@ -154,7 +154,7 @@ def _arm_of(row: dict) -> str | None:
 def _rate(rows: Iterable[dict], field_name: str) -> tuple[float | None, int, int, int]:
     """(rate, k, n_known, n_unknown). Null outcomes leave the denominator: `read`
     null means UNKNOWN (a truncation on a call targeting the fact file) and
-    coercing it to 0 would make the bias run with the hypothesis (§4.2.2)."""
+    coercing it to 0 would make the bias run with the hypothesis."""
     k = n = unk = 0
     for r in rows:
         v = r.get(field_name)
@@ -297,7 +297,7 @@ def gate_parse_ok(runs: Sequence[dict]) -> Gate:
 
 def gate_refused(runs: Sequence[dict]) -> Gate:
     """probe refused == 0 — a refusal means the trusted stream-json user channel
-    broke, and the refusal text contaminates the run's final answer (V1)."""
+    broke, and the refusal text contaminates the run's final answer."""
     n = k = 0
     bad = []
     for run in runs:
@@ -320,7 +320,7 @@ def gate_pacing(runs: Sequence[dict]) -> Gate:
     approximately tool-call boundaries, which is what the every-1-3-tool-calls
     cadence means. The producer must GROUP BY message.id before counting —
     stream.jsonl splits one assistant message across lines exactly like the
-    transcript (V17), so a per-line count inherits the V7 double-count bug.
+    transcript, so a per-line count inherits the V7 double-count bug.
 
     Runs with zero tool calls are excluded from the denominator: a run that never
     called a tool cannot violate pacing, and counting it as a violation would
@@ -494,7 +494,7 @@ def gate_join_coverage(runs: Sequence[dict]) -> Gate:
     return g
 
 
-#: Evaluation order = §10's table order. Every gate is blocking; §10 says so.
+#: Evaluation order ='s table order. Every gate is blocking; says so.
 GATES: tuple[Callable[[Sequence[dict]], Gate], ...] = (
     gate_confab,
     gate_unexplained_possession,
@@ -513,7 +513,7 @@ GATES: tuple[Callable[[Sequence[dict]], Gate], ...] = (
 
 
 def triage(runs: Sequence[dict], *, require_all: bool = False) -> dict[str, Any]:
-    """Evaluate every §10 gate. `blocked` is the answer to "may the main run start"."""
+    """Evaluate every gate. `blocked` is the answer to "may the main run start"."""
     gates = [fn(runs) for fn in GATES]
     failed = [g for g in gates if g.status == "fail"]
     unevaluable = [g for g in gates if g.status == "unevaluable"]
@@ -551,12 +551,12 @@ def render_markdown(result: dict[str, Any]) -> str:
     L += ["", f"passed {result['n_passed']} · failed {result['n_failed']} · "
               f"unevaluable {result['n_unevaluable']}", "",
           ("**BLOCKED — the main run may not start.**" if result["blocked"]
-           else "Not blocked: every evaluable §10 gate passed.")]
+           else "Not blocked: every evaluable gate passed.")]
     return "\n".join(L) + "\n"
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    p = argparse.ArgumentParser(description="evaluate the §10 pilot gates over a job")
+    p = argparse.ArgumentParser(description="evaluate the pilot gates over a job")
     p.add_argument("--job-dir", required=True)
     p.add_argument("--runs-root", default=None)
     p.add_argument("--json", default=None, help="write the full result here")

@@ -5,16 +5,16 @@ reconcile.py — the derivation chain, orchestrated idempotently.
 RESPONSIBILITY
   Rebuild the four analysis tables of one run from its raw bytes, in the only
   order the data dependencies allow, writing each through a .tmp + os.replace so
-  a crash never leaves a half-written table behind. §5.1(3) is the whole point:
+  a crash never leaves a half-written table behind. is the whole point:
   raw before derived, derivation offline, re-runnable MONTHS LATER after a
   scanner bugfix, with the same raw bytes producing the same tables.
 
   Nothing in here talks to the agent, the network, or the workspace.
 
-ORDER, AND WHY IT IS NOT §5.2's ORDER
-  IMPLEMENTATION.md §5.2 lists events before exposure. The data dependency runs
+ORDER, AND WHY IT IS NOT's ORDER
+   lists events before exposure. The data dependency runs
   the other way: events.jsonl carries `nonce_hits`, and `result_digest` is
-  defined as "computed AFTER nonce scanning" (§6.1 scan-before-truncate). So the
+  defined as "computed AFTER nonce scanning" (scan-before-truncate). So the
   chain is
 
       regions -> exposure -> events -> probes -> trace -> validate
@@ -153,7 +153,7 @@ def _summarize(rd: Path, run_id: str, ident: dict, rs: Any, exposure_rows: Seque
         # Zero fact cards means exposure.jsonl and fact_trace.jsonl are empty BY
         # CONSTRUCTION, not because the fact was never read. The registry lives in
         # $JOB_DIR/.registry/ and the run dir lives under $ATLAS_RUNS_ROOT, which
-        # are deliberately different trees (V9) — so the caller must pass --facts.
+        # are deliberately different trees — so the caller must pass --facts.
         # Failing loudly here is the difference between "no uptake" and "no input".
         "fact_cards_loaded": {"value": len(cards), "threshold": 1, "pass": len(cards) >= 1},
     }
@@ -262,7 +262,7 @@ def _input_manifest(rd: Path) -> dict:
 def check_idempotent(run_dir: str | os.PathLike, facts: Any = None) -> dict:
     """Reconcile twice and compare the tables byte for byte.
 
-    This is the property the whole design rests on (§5.1(3)): a scanner bugfix
+    This is the property the whole design rests on: a scanner bugfix
     months from now must reproduce the tables from raw, not from a cached shape.
     """
     rd = Path(run_dir)
@@ -275,7 +275,7 @@ def check_idempotent(run_dir: str | os.PathLike, facts: Any = None) -> dict:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    p = argparse.ArgumentParser(description="rebuild the derived tables of one run (§6.1)")
+    p = argparse.ArgumentParser(description="rebuild the derived tables of one run")
     p.add_argument("--run-dir", required=True)
     p.add_argument("--facts", default=None, help="facts JSON/YAML or probe_key.json")
     p.add_argument("--schemas-dir", default=None)
@@ -313,7 +313,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if no_facts:
         print("NO FACT CARDS LOADED — exposure.jsonl and fact_trace.jsonl are empty by "
               "construction. Pass --facts $JOB_DIR/.registry/_index/probe_key.json; the "
-              "registry is deliberately not an ancestor of the run dir (V9).",
+              "registry is deliberately not an ancestor of the run dir.",
               file=sys.stderr)
     hard_fail = (summary["alarms"]["unknown_visible"] > 0
                  or summary["alarms"].get("trace_error")

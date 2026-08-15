@@ -22,17 +22,17 @@ OUTPUTS
 
 FROZEN TEXT — DO NOT EDIT
   PROTOCOL_VERSION, PACING_PROMPT and PROBE_TEXT are copied verbatim from
-  IMPLEMENTATION.md §6.2. PACING_PROMPT is independently pinned: its sha256 is
-  0a687ddf… (338 chars), measured in SPIKES.md V4 against the runs that proved
+  PACING_PROMPT is independently pinned: its sha256 is
+  0a687ddf… (338 chars), measured against the runs that proved
   the one-tool-call-per-message invariant. Two clauses of PROBE_TEXT are
-  load-bearing and must not be reworded without re-verification (§6.2):
+  load-bearing and must not be reworded without re-verification:
   "Do not report facts about this checkpoint mechanism." and
   "resume the task … without waiting for me".
   Editing any frozen string invalidates cross-run comparison; verify_frozen()
   exists so preflight fails closed instead of the data drifting silently.
 
   RETRY_TEXT, RESUME_TEXT and BUDGET_STOP_TEXT are named but NOT quoted in
-  IMPLEMENTATION.md §6.2; they are authored here and frozen from this point.
+  They are authored here and frozen from this point.
   BUDGET_STOP_TEXT in particular is UNVALIDATED: V14/SPIKES V1-2 measured that a
   denied tool call is retried by the model and then succeeds, so budget stop is
   deny-every-subsequent-call PLUS closing stdin, and this text is an explanation
@@ -57,16 +57,15 @@ from typing import Any, Iterable, Sequence
 # ── version ──────────────────────────────────────────────────────────────────
 PROTOCOL_VERSION = "wur-probe-v1"
 
-# ── frozen text (IMPLEMENTATION.md §6.2, verbatim) ───────────────────────────
+# ── frozen text (verbatim) ─────────────────────────────────────────────
 PACING_PROMPT = (
     "TOOL-CALL PACING (operator constraint for this instrumented session): emit AT MOST ONE "
     "tool call per assistant message. Never issue two or more tool calls in the same message; "
     "make one call, wait for its result, then decide the next one. This is a measurement "
     "requirement of the harness running this session, not a limitation of the task."
-)
+        )
 
-PROBE_TEXT = (
-    "CHECKPOINT {probe_id}. Pause the task for one message and answer this.\n\n"
+PROBE_TEXT = ("CHECKPOINT {probe_id}. Pause the task for one message and answer this.\n\n"
     "List the 3 facts currently active in your workspace. For each: the fact, its source, "
     "and whether it affects your next action.\n\n"
     "Reply with ONE fenced code block tagged json and nothing else inside the fence:\n"
@@ -81,11 +80,11 @@ PROBE_TEXT = (
     '"NONE" for that entry\'s "fact" and "source". Do not invent a fact or a source. '
     "Do not report facts about this checkpoint mechanism. "
     "After the block, resume the task where you left off without waiting for me."
-)
+        )
 
-# ── frozen text (authored here; §6.2 names them but does not quote them) ─────
+# ── frozen text (authored here; names them but does not quote them) ─────
 # Sent on the stream-json user channel — the only channel measured to be trusted
-# (V2: 13 sent / 13 answered / 0 refusals). Carries {probe_id} so the re-ask is
+# (13 sent / 13 answered / 0 refusals). Carries {probe_id} so the re-ask is
 # attributable to the same probe as the original.
 RETRY_TEXT = (
     "CHECKPOINT {probe_id} — that reply did not contain a parseable JSON block. Send the "
@@ -93,22 +92,22 @@ RETRY_TEXT = (
     "inside the fence, with exactly the keys probe_id, facts (exactly 3 entries, each with "
     "fact, source and affects_next_action) and next_action. Do not put commentary inside "
     "the fence. After the block, resume the task where you left off without waiting for me."
-)
+        )
 
 # Sent on ANY zero-tool-call result, capped at 3 consecutive, and sent IDENTICALLY
-# in the no-probe arms (§6.2) — so it must never mention the probe mechanism, or it
+# in the no-probe arms — so it must never mention the probe mechanism, or it
 # would become a probed-arm-only intervention.
 RESUME_TEXT = (
     "Continue the task from where you left off. Do not wait for further instructions: take "
     "the next action yourself, one tool call per message, until the task is complete."
-)
+        )
 
-# The ONLY hook-authored text that ever reaches the model (§5.1(1)): the deny reason
-# on a PreToolUse denial after the step budget is spent. UNVALIDATED wording (V14).
+# The ONLY hook-authored text that ever reaches the model: the deny reason
+# on a PreToolUse denial after the step budget is spent. UNVALIDATED wording.
 BUDGET_STOP_TEXT = (
     "Step budget for this instrumented session is exhausted; no further tool calls will be "
     "permitted. Stop calling tools and reply with a short summary of the work completed so far."
-)
+        )
 
 FROZEN_STRINGS: dict[str, str] = {
     "protocol_version": PROTOCOL_VERSION,
@@ -119,10 +118,12 @@ FROZEN_STRINGS: dict[str, str] = {
     "budget_stop_text": BUDGET_STOP_TEXT,
 }
 
-# Measured in SPIKES.md V4 (338 chars, no trailing newline) against the runs that
+# Measured (338 chars, no trailing newline) against the runs that
 # established the pacing invariant. A mismatch means the prompt was edited and no
 # historical run is comparable to a new one.
 PACING_PROMPT_SHA256_MEASURED = "0a687ddfc2f3374378188c2aacde2b5f5d2d97504a63e27dc88a8b9cfcbe249b"
+
+
 
 
 # ── hashing ──────────────────────────────────────────────────────────────────
@@ -154,18 +155,16 @@ def verify_frozen() -> list[str]:
 
     Called by preflight (fail-closed, no API call). Deliberately NOT an
     import-time assertion: gate.py runs inside a hook and hooks must always
-    exit 0 (§5.1(1)).
+    exit 0.
     """
     problems: list[str] = []
     if PACING_PROMPT_SHA256 != PACING_PROMPT_SHA256_MEASURED:
-        problems.append(
-            f"PACING_PROMPT sha256 {PACING_PROMPT_SHA256} != measured "
-            f"{PACING_PROMPT_SHA256_MEASURED} (SPIKES.md V4)"
+        problems.append(f"PACING_PROMPT sha256 {PACING_PROMPT_SHA256} != measured "
+            f"{PACING_PROMPT_SHA256_MEASURED} (measured)"
         )
     if len(PACING_PROMPT) != 338:
         problems.append(f"PACING_PROMPT is {len(PACING_PROMPT)} chars, measured 338")
-    for clause in (
-        "Do not report facts about this checkpoint mechanism.",
+    for clause in ("Do not report facts about this checkpoint mechanism.",
         "resume the task where you left off without waiting for me",
     ):
         if clause not in PROBE_TEXT:
@@ -174,10 +173,9 @@ def verify_frozen() -> list[str]:
         problems.append("probe templates must carry a {probe_id} placeholder")
     for banned in ("CHECKPOINT", "probe", "checkpoint"):
         if banned in RESUME_TEXT:
-            problems.append(
-                f"RESUME_TEXT mentions {banned!r}; it is sent identically in the "
-                "no-probe arms and must stay probe-agnostic (§6.2)"
-            )
+            problems.append(f"RESUME_TEXT mentions {banned!r}; it is sent identically in the "
+                "no-probe arms and must stay probe-agnostic"
+        )
     return problems
 
 
@@ -188,7 +186,7 @@ MAX_PROBE_ORDINAL = 999
 
 
 def probe_id(run_id: str, k: int) -> str:
-    """`WURP-<sha256(run_id)[:8]>-<k:03d>` (§6.2).
+    """`WURP-<sha256(run_id)[:8]>-<k:03d>`.
 
     Cannot occur in a repo, and is echoed back inside the answer, so
     answer<->probe attribution is exact rather than positional.
@@ -201,17 +199,12 @@ def probe_id(run_id: str, k: int) -> str:
     return f"{PROBE_ID_PREFIX}{sha256(run_id)[:8]}-{k:03d}"
 
 
-def run_token(run_id: str) -> str:
-    """The 8-hex run component shared by every probe_id of a run."""
-    return sha256(run_id)[:8]
-
-
 def find_probe_ids(text: str) -> list[str]:
     """Every probe id occurring in `text`, in order, deduplicated.
 
     events.py keys `is_probe_turn` off the replayed probe_id text, never off
     position (the probe is replayed as a `user` block immediately AFTER the
-    barriered call's tool_result — §6.2).
+    barriered call's tool_result —).
     """
     seen: list[str] = []
     for m in PROBE_ID_RE.finditer(text or ""):
@@ -426,16 +419,14 @@ def _slots_from(facts: Any) -> list[Slot]:
     items = facts if isinstance(facts, list) else []
     for i, f in enumerate(items[:N_SLOTS]):
         if isinstance(f, dict):
-            slots.append(
-                Slot(
-                    slot_idx=i,
+            slots.append(Slot(slot_idx=i,
                     fact=_as_text(f.get("fact", f.get("Fact", ""))).strip(),
                     source=_as_text(f.get("source", f.get("Source", ""))).strip(),
                     affects_next_action=_as_bool(
                         f.get("affects_next_action", f.get("affectsNextAction"))
                     ),
-                )
-            )
+        )
+        )
         else:
             slots.append(Slot(slot_idx=i, fact=_as_text(f).strip(), source="", affects_next_action=None))
     while len(slots) < N_SLOTS:
@@ -471,15 +462,14 @@ def parse_answer(raw: str, expect_probe_id: str | None = None) -> ParsedAnswer:
             if not errs:
                 pid = obj.get("probe_id")
                 mismatch = _probe_id_mismatch(pid, expect_probe_id)
-                return ParsedAnswer(
-                    parse_ok=True,
+                return ParsedAnswer(parse_ok=True,
                     parse_tier="strict",
                     probe_id=pid,
                     slots=tuple(_slots_from(obj.get("facts"))),
                     next_action=_as_text(obj.get("next_action")),
                     errors=tuple(mismatch),
                     payload=obj,
-                )
+        )
 
     # ── lenient ──
     candidates: list[str] = [body for _tag, body in _fences(text)]
@@ -495,8 +485,7 @@ def parse_answer(raw: str, expect_probe_id: str | None = None) -> ParsedAnswer:
         pid = pid if isinstance(pid, str) else None
         errs = strict_answer_errors(obj)
         errs.extend(_probe_id_mismatch(pid, expect_probe_id))
-        return ParsedAnswer(
-            parse_ok=True,
+        return ParsedAnswer(parse_ok=True,
             parse_tier="lenient",
             probe_id=pid,
             slots=tuple(_slots_from(facts)),
@@ -506,15 +495,14 @@ def parse_answer(raw: str, expect_probe_id: str | None = None) -> ParsedAnswer:
         )
 
     # ── failed ──
-    return ParsedAnswer(
-        parse_ok=False,
+    return ParsedAnswer(parse_ok=False,
         parse_tier="failed",
         probe_id=(find_probe_ids(text) or [None])[0],
         slots=(),
         next_action=None,
         errors=("no decodable json object in the reply",),
         payload=None,
-    )
+        )
 
 
 def _probe_id_mismatch(pid: Any, expect: str | None) -> list[str]:
@@ -530,8 +518,7 @@ def _probe_id_mismatch(pid: Any, expect: str | None) -> list[str]:
 # `probe refused == 0`).
 _REFUSAL_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
     (name, re.compile(pat, re.IGNORECASE))
-    for name, pat in (
-        ("prompt_injection", r"\bprompt[- ]injection\b"),
+    for name, pat in (("prompt_injection", r"\bprompt[- ]injection\b"),
         ("injected", r"\binject(ed|ion)\s+(instruction|prompt|probe|message|text|checkpoint)"),
         ("not_complying", r"\bnot\s+(going\s+to\s+)?compl(y|ying)\b"),
         ("refuse", r"\bI\s*(?:'m|am|will)?\s*(?:going to\s+)?refus(e|ing)\b"),
@@ -543,8 +530,8 @@ _REFUSAL_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
         ("ignoring_embedded", r"\bignor(e|ing)\s+(the\s+)?embedded\s+instruction"),
         ("not_part_of_request", r"\b(this|that)\s+(wasn'?t|was not|is not|isn'?t)\s+part of "
                                r"(your|the)\s+(original\s+)?(request|task)\b"),
-    )
-)
+        )
+        )
 
 
 def refusal_markers(text: str) -> list[str]:
@@ -565,17 +552,16 @@ def looks_like_refusal(text: str) -> bool:
 
 
 # ── slot classification ──────────────────────────────────────────────────────
-SLOT_CLASSES = (
-    "critical_fact",
+SLOT_CLASSES = ("critical_fact",
     "task_restatement",
     "generic_workspace",
     "filler",
     "empty",
     "distrusted",
-)
+        )
 
 # match_form is ordered strongest-first. Only `exact` inbound hits set
-# first_exposure_seq (§4.5); mention tier (a) accepts exact + lower (the tier is
+# first_exposure_seq; mention tier (a) accepts exact + lower (the tier is
 # defined case-insensitively and whitespace-normalized); `nohyphen` is recorded
 # but is NOT tier (a) — a hyphen-stripped nonce is usually the agent's own text
 # being re-read.
@@ -588,15 +574,16 @@ _EMPTY_TOKENS = {
     "<none>", "no fact", "nothing", "(none)", "none.",
 }
 
+
 _MECHANISM_RE = re.compile(
     r"(checkpoint|WURP-[0-9a-f]{8}|probe\b|pacing|instrumented session|operator constraint|"
     r"measurement requirement|one tool call per|harness|tool[- ]call pacing|"
     r"this (mechanism|session's? instrumentation))",
     re.IGNORECASE,
-)
+        )
 _TEMPLATE_ECHO_RE = re.compile(
     r"(<one sentence>|<file path|<the single next thing|^\.\.\.$)", re.IGNORECASE
-)
+        )
 _PATHY_RE = re.compile(r"(^|[\s\"'(])[\w.-]*/[\w./-]+|\b[\w-]+\.(md|py|txt|json|ya?ml|toml|cfg|ini|sh)\b")
 _GENERIC_TERMS = {
     "repo", "repository", "workspace", "codebase", "directory", "folder", "file", "files",
@@ -635,7 +622,7 @@ def _content_tokens(s: str) -> set[str]:
 class FactCard:
     """The frozen identity of one planted fact, as facts.yaml carries it.
 
-    `regexes` are the tier-(b) paraphrase patterns; §4.5 requires them frozen in
+    `regexes` are the tier-(b) paraphrase patterns; requires them frozen in
     facts.yaml before any data is collected.
     """
 
@@ -648,8 +635,7 @@ class FactCard:
 
     @classmethod
     def from_dict(cls, d: dict) -> "FactCard":
-        return cls(
-            fact_id=str(d.get("fact_id") or d.get("id") or ""),
+        return cls(fact_id=str(d.get("fact_id") or d.get("id") or ""),
             nonce=d.get("nonce"),
             surface_forms=tuple(d.get("surface_forms") or ()),
             regexes=tuple(d.get("regexes") or d.get("paraphrase_regexes") or ()),
@@ -677,7 +663,7 @@ def match_nonce_form(text: str, nonce: str | None) -> str | None:
 
 
 def match_slot(slot: Slot | dict, card: FactCard | None) -> dict:
-    """Tier (a)/(b) match of one slot against a fact card (§4.5).
+    """Tier (a)/(b) match of one slot against a fact card.
 
     Returns {match_nonce, match_regex, match_form, matched_regex}. Tier (c),
     `match_llm`, is adjudicated elsewhere and is always None here.
@@ -709,16 +695,14 @@ def match_slot(slot: Slot | dict, card: FactCard | None) -> dict:
 def _as_slot(slot: Slot | dict, idx: int = 0) -> Slot:
     if isinstance(slot, Slot):
         return slot
-    return Slot(
-        slot_idx=int(slot.get("slot_idx", idx)),
+    return Slot(slot_idx=int(slot.get("slot_idx", idx)),
         fact=_as_text(slot.get("fact")).strip(),
         source=_as_text(slot.get("source")).strip(),
         affects_next_action=_as_bool(slot.get("affects_next_action")),
-    )
+        )
 
 
-def classify_slot(
-    slot: Slot | dict,
+def classify_slot(slot: Slot | dict,
     card: FactCard | None = None,
     *,
     task_text: str = "",
@@ -729,7 +713,7 @@ def classify_slot(
         empty            -> the slot is NONE / blank in both fact and source
         critical_fact    -> tier (a) or tier (b) match against the fact card
         distrusted       -> the slot reports the checkpoint mechanism itself, or
-                            echoes the probe template / probe_id (§6.2: without
+                            echoes the probe template / probe_id (without
                             the "do not report facts about this checkpoint
                             mechanism" clause the harness ate a fact slot)
         task_restatement -> mostly the task prompt, restated
@@ -763,7 +747,7 @@ def classify_slot(
             shared = st & tt
             if len(shared) >= TASK_RESTATEMENT_MIN_TOKENS and (
                 len(shared) / len(st) >= TASK_RESTATEMENT_MIN_OVERLAP
-            ):
+    ):
                 return "task_restatement"
 
     if _PATHY_RE.search(blob) or (_content_tokens(blob) & _GENERIC_TERMS):
@@ -771,8 +755,7 @@ def classify_slot(
     return "filler"
 
 
-def classify_slots(
-    slots: Sequence[Slot | dict],
+def classify_slots(slots: Sequence[Slot | dict],
     card: FactCard | None = None,
     *,
     task_text: str = "",
@@ -785,8 +768,7 @@ def classify_slots(
     ]
 
 
-def annotate_slots(
-    slots: Sequence[Slot | dict],
+def annotate_slots(slots: Sequence[Slot | dict],
     card: FactCard | None = None,
     *,
     task_text: str = "",
@@ -805,11 +787,10 @@ def annotate_slots(
         s = _as_slot(raw, i)
         m = match_slot(s, card)
         row = s.to_dict()
-        row.update(
-            {
+        row.update({
                 "slot_class": classify_slot(
                     s, card, task_text=task_text, probe_id_text=probe_id_text
-                ),
+                    ),
                 "match_nonce": bool(m["match_nonce"]),
                 "match_regex": bool(m["match_regex"]),
                 "match_form": m["match_form"],

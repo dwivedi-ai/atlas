@@ -14,7 +14,7 @@ OUTPUTS
   A plain dict, serialized verbatim to $RUN_DIR/probe_plan.json BEFORE the child
   starts: {seed_material, seed_int, lo, hi, max_probes, intervals, fire_at}.
 
-WHY IT IS SEEDED THE WAY IT IS (§6.2)
+WHY IT IS SEEDED THE WAY IT IS
   The seed is (salt, task_id, rep) — deliberately NOT the arm. Every arm of the
   same (task, rep) therefore fires its k-th probe at the same barrier index, and
   probe timing becomes a matched covariate rather than a nuisance one. Rollup
@@ -41,7 +41,7 @@ import json
 import random
 from typing import Any
 
-# Defaults are the §6.2 values; job.yaml `probe{}` may override lo/hi/max_probes/salt.
+# Defaults are the values; job.yaml `probe{}` may override lo/hi/max_probes/salt.
 DEFAULT_LO = 1
 DEFAULT_HI = 3
 DEFAULT_MAX_PROBES = 24
@@ -57,7 +57,7 @@ def schedule(
     max_probes: int = DEFAULT_MAX_PROBES,
     salt: str = DEFAULT_SALT,
 ) -> dict[str, Any]:
-    """The probe cadence for one (task_id, rep), verbatim from IMPLEMENTATION.md §6.2.
+    """The probe cadence for one (task_id, rep), verbatim from 
 
     `fire_at[k]` is the barrier ordinal (1-based, counting tool calls) at which
     probe k+1 is injected; `intervals[k]` is the gap that produced it. The body

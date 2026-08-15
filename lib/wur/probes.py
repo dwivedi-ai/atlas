@@ -20,7 +20,7 @@ INPUTS
                                the raw stream once, in events.py) and the event
                                rows, for barrier attribution and the tool that
                                was ACTUALLY called next.
-  fact cards                   for the tier (a)/(b) mention ladder (§4.5).
+  fact cards                   for the tier (a)/(b) mention ladder.
 
 OUTPUTS
   $RUN_DIR/probes.jsonl        rows validating against schemas/probes.schema.json
@@ -31,7 +31,7 @@ ATTRIBUTION IS BY ECHOED probe_id, NEVER BY POSITION
   to the probe that actually asked for it. `probe_idx` is read off the id's own
   ordinal, not off the order answers happened to arrive in.
 
-OUTCOME LADDER (§6.2, schemas/probes.schema.json)
+OUTCOME LADDER (schemas/probes.schema.json)
   answered   a reply arrived for this probe_id — even if the prose grumbles, as
              long as it parsed.
   refused    the reply reads as a refusal (protocol.looks_like_refusal). The
@@ -70,6 +70,8 @@ _PROMPT_SOURCE_RE = re.compile(
 _TOOL_SOURCE_RE = re.compile(r"\b(bash|read|write|edit|glob|grep|tool call|tool result|"
                              r"command output|stdout)\b", re.IGNORECASE)
 _PATHY_RE = re.compile(r"[\w.@-]*(?:/[\w.@-]+)+|[\w.-]+\.(?:md|py|txt|json|ya?ml|toml|cfg|ini|sh|rst)")
+
+
 
 
 # ── probe plan ───────────────────────────────────────────────────────────────
@@ -238,7 +240,7 @@ def build(turns: Sequence[Any], rows: Sequence[dict], plan: dict,
         seqs = sorted({s for t in group for s in t.seqs})
 
         # The two id lists lib/extract/core.py needs to compute `tool_calls_task`
-        # (§4.4's difficulty-band metric = tool calls EXCLUDING probe turns).
+        # ('s difficulty-band metric = tool calls EXCLUDING probe turns).
         # Without them core.py falls back to tool_calls_task == tool_calls_total,
         # which is silently wrong on every probed run rather than absent.
         seqset = set(seqs)
@@ -304,7 +306,7 @@ def _wrong_value(slot: dict, card: protocol.FactCard | None) -> bool | None:
 
 
 def mention_by_probe(rows: Sequence[dict]) -> dict[int, bool]:
-    """probe_idx -> did ANY slot match the fact (§4.5 primary = tier a OR b)."""
+    """probe_idx -> did ANY slot match the fact (primary = tier a OR b)."""
     out: dict[int, bool] = {}
     for r in rows:
         hit = any(bool(s.get("match_nonce")) or bool(s.get("match_regex"))
@@ -339,6 +341,10 @@ def identity_of(run_dir: str | os.PathLike) -> dict:
     }
 
 
+
+
+
+
 def run(run_dir: str | os.PathLike, facts: Any = None, out_path: str | os.PathLike | None = None,
         events_result: Any = None) -> tuple[list[dict], dict]:
     rd = Path(run_dir)
@@ -369,7 +375,7 @@ def run(run_dir: str | os.PathLike, facts: Any = None, out_path: str | os.PathLi
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    p = argparse.ArgumentParser(description="probe answers -> probes.jsonl (§4.3)")
+    p = argparse.ArgumentParser(description="probe answers -> probes.jsonl")
     p.add_argument("--run-dir", required=True)
     p.add_argument("--facts", default=None)
     p.add_argument("--out", default=None)

@@ -48,7 +48,7 @@ THREE MEASURED CONSTRAINTS SHAPE THIS FILE
        `--add-dir` does not restore it, so the canary must use the run's exact
        `--setting-sources project`, or it would measure a different machine.
 
-WHAT THIS COMMAND LINE DELIBERATELY OMITS versus §5.2
+WHAT THIS COMMAND LINE DELIBERATELY OMITS versus
   --input-format stream-json / --replay-user-messages / --include-hook-events /
   --settings / --session-id / --max-budget-usd: all of them are about the driver's
   transport and the barrier, none of them changes what the model is given. The
@@ -84,18 +84,18 @@ import protocol  # noqa: E402  (lib/wur is on sys.path; see wur/__init__.py)
 
 CANARY_SCHEMA_VERSION = "1"
 
-#: The tool set asserted positively at preflight and here (V10: --tools silently
+#: The tool set asserted positively at preflight and here (--tools silently
 #: ignores names it does not honour, so the allowlist is checked by reading it
 #: back out of system/init, never by trusting the flag).
 FROZEN_TOOLS: tuple[str, ...] = ("Bash", "Read", "Write", "Edit", "Glob", "Grep")
 
-#: The four keys that vary run to run (V18). Dropping exactly these yielded ONE
+#: The four keys that vary run to run. Dropping exactly these yielded ONE
 #: identical sha256 across four runs.
 INIT_VOLATILE_KEYS: tuple[str, ...] = ("cwd", "memory_paths", "session_id", "uuid")
 
 #: Must be empty under the hygiene recipe (S2a). `agents` is NOT in this list and
 #: must never be added to it — it is never empty, and the assertion would fail
-#: closed on every run (V18). It is harmless because Task is absent from --tools.
+#: closed on every run. It is harmless because Task is absent from --tools.
 INIT_MUST_BE_EMPTY: tuple[str, ...] = ("mcp_servers", "skills", "slash_commands", "plugins")
 
 DEFAULT_MODEL = "claude-sonnet-5"
@@ -124,7 +124,7 @@ DUMP_PROMPT = (
 )
 
 ARGV_DELTA_FROM_RUN = {
-    "--input-format stream-json": "transport only; the canary is a one-shot with stdin closed (V19)",
+    "--input-format stream-json": "transport only; the canary is a one-shot with stdin closed",
     "--replay-user-messages": "transport only; there are no injected user messages here",
     "--include-hook-events": "no hooks are bound for the canary",
     "--settings": "binding the PreToolUse barrier with no driver running would block every tool call",
@@ -141,12 +141,12 @@ def sha256(text: str | bytes) -> str:
 
 
 def canonical_init(init: dict[str, Any]) -> dict[str, Any]:
-    """`init` minus the four keys that vary every run (V18)."""
+    """`init` minus the four keys that vary every run."""
     return {k: v for k, v in (init or {}).items() if k not in INIT_VOLATILE_KEYS}
 
 
 def init_sha256(init: dict[str, Any]) -> str:
-    """The §5.1(6) stamp: sha256 of the canonicalized init, keys sorted.
+    """The stamp: sha256 of the canonicalized init, keys sorted.
 
     Verified identical across four runs. Hashing the raw event instead produces a
     fresh value every run, which would make the stamp unable to detect the drift
@@ -330,7 +330,7 @@ def run_phase(phase: str, *, workspace: str | os.PathLike[str], out_dir: Path, h
     except FileNotFoundError as exc:
         out, err, code = "", f"{exc}", 127
 
-    # Raw before derived (§5.1(3)).
+    # Raw before derived.
     Path(rec["stream_path"]).write_text(out, encoding="utf-8")
     Path(rec["stderr_path"]).write_text(err, encoding="utf-8")
 
@@ -351,7 +351,7 @@ def run_phase(phase: str, *, workspace: str | os.PathLike[str], out_dir: Path, h
         "cost_usd": result.get("total_cost_usd"),
         # stderr is recorded, never graded: every one-shot writes a warning there
         # under some conditions and a `[ -s stderr ]` check would read it as
-        # failure (V19).
+        # failure.
         "stderr_bytes": len(err),
     })
     rec["_init_event"] = parsed["init"]

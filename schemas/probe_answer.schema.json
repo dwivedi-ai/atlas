@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "probe_answer.schema.json",
   "title": "ProbeAnswer",
-  "description": "The JSON object the MODEL is asked to emit inside the single ```json fence of a checkpoint reply (IMPLEMENTATION.md §6.2 PROBE_TEXT). This is the raw payload, not a derived row — probes.schema.json describes the row that wraps it. A payload validating here is exactly what lib/wur/protocol.py:parse_answer() calls parse_tier \"strict\"; protocol.py:strict_answer_errors() re-implements these rules in stdlib Python because the driver runs on a python3 with no jsonschema. Changing either one requires changing the other.",
+  "description": "The JSON object the MODEL is asked to emit inside the single ```json fence of a checkpoint reply (protocol.PROBE_TEXT). This is the raw payload, not a derived row — probes.schema.json describes the row that wraps it. A payload validating here is exactly what lib/wur/protocol.py:parse_answer() calls parse_tier \"strict\"; protocol.py:strict_answer_errors() re-implements these rules in stdlib Python because the driver runs on a python3 with no jsonschema. Changing either one requires changing the other.",
   "type": "object",
   "required": ["probe_id", "facts", "next_action"],
   "additionalProperties": false,
@@ -13,7 +13,7 @@
       "pattern": "^WURP-[0-9a-f]{8}-[0-9]{3}$"
     },
     "facts": {
-      "description": "Exactly 3 slots. With one fact per task (D1) at least 2 are filler by construction — the filler distribution is itself a finding, not noise. An entry the model cannot fill honestly uses the literal string \"NONE\" for both fact and source.",
+      "description": "Exactly 3 slots. With one fact per task at least 2 are filler by construction — the filler distribution is itself a finding, not noise. An entry the model cannot fill honestly uses the literal string \"NONE\" for both fact and source.",
       "type": "array",
       "minItems": 3,
       "maxItems": 3,
@@ -32,7 +32,7 @@
           },
           "affects_next_action": {
             "type": "boolean",
-            "description": "The model's own claim that this fact drives its next move. Compared against the actually-issued next tool call to give probe fidelity (STATUS.md §5)."
+            "description": "The model's own claim that this fact drives its next move. Compared against the actually-issued next tool call to give probe fidelity."
           }
         }
       }

@@ -64,7 +64,7 @@ import random
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any, Sequence
 
 HERE = Path(__file__).resolve().parent
 LIB = HERE.parent
@@ -101,8 +101,7 @@ def sha256_json(obj: Any) -> str:
 
 
 # ── the design ───────────────────────────────────────────────────────────────
-def design_core(
-    *,
+def design_core(*,
     job_id: str,
     experiment: str,
     tasks: Sequence[str],
@@ -144,8 +143,7 @@ def _check_ids(name: str, values: Sequence[str]) -> list[str]:
     return out
 
 
-def build(
-    *,
+def build(*,
     job_id: str,
     tasks: Sequence[str],
     conditions: Sequence[str],
@@ -254,8 +252,7 @@ def from_job(job_dir: str | Path, *, agent_dash: str | None = None,
     tasks = [t["id"] for t in spec.get("tasks") or []]
     conditions = jobspec.conditions_of(spec)
     seed = matrix_seed if matrix_seed is not None else spec.get("matrix_seed")
-    return build(
-        job_id=spec.get("job_id") or job_dir.name,
+    return build(job_id=spec.get("job_id") or job_dir.name,
         tasks=tasks,
         conditions=conditions,
         reps=int(spec.get("reps") or 1),
@@ -305,32 +302,6 @@ def check(job_dir: str | Path, *, agent_dash: str | None = None) -> list[str]:
     return problems
 
 
-# ── schedule_actual.jsonl ────────────────────────────────────────────────────
-def actual_path(job_dir: str | Path) -> Path:
-    return Path(job_dir) / ACTUAL_BASENAME
-
-
-def actual_row(cell: dict[str, Any], *, run_id: str, event: str,
-               concurrency_at_launch: int | None = None, ts: str | None = None,
-               **extra: Any) -> dict[str, Any]:
-    """One realized-order row. run_job.sh appends these under flock (one writer
-    per file, V8: unlocked appends past PIPE_BUF corrupt)."""
-    row = {
-        "ts": ts or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "event": event,
-        "run_id": run_id,
-        "cell_index": cell.get("cell_index"),
-        "run_order_index": cell.get("run_order_index"),
-        "block": cell.get("block"),
-        "task_id": cell.get("task_id"),
-        "condition": cell.get("condition"),
-        "rep": cell.get("rep"),
-        "concurrency_at_launch": concurrency_at_launch,
-    }
-    row.update(extra)
-    return row
-
-
 # ── CLI ──────────────────────────────────────────────────────────────────────
 def _split(value: str | None) -> list[str]:
     return [p.strip() for p in (value or "").split(",") if p.strip()]
@@ -343,6 +314,8 @@ def _emit_cells(sched: dict[str, Any], fmt: str) -> None:
             print(f"{c['task_id']}\t{c['condition']}\t{c['rep']}\t{c['cell_index']}\t{c['run_order_index']}")
         else:
             print(f"{c['task_id']}|{c['condition']}|{c['rep']}|{c['cell_index']}|{c['run_order_index']}")
+
+
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -381,8 +354,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         explicit = _split(a.tasks) and _split(a.conditions)
         if explicit:
-            sched = build(
-                job_id=a.job_id or (Path(a.job_dir).name if a.job_dir else "job"),
+            sched = build(job_id=a.job_id or (Path(a.job_dir).name if a.job_dir else "job"),
                 tasks=_split(a.tasks),
                 conditions=_split(a.conditions),
                 reps=a.reps if a.reps is not None else 1,
@@ -391,7 +363,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 salt=a.salt,
                 agent_dash=a.agent_dash,
                 generated_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            )
+    )
         else:
             if not a.job_dir:
                 print("ERROR: give --job-dir, or both --tasks and --conditions", file=sys.stderr)
@@ -421,14 +393,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         # remaining cells is exactly the confound this module removes.
         existing = load(out)
         if existing.get("design_sha256") != sched.get("design_sha256"):
-            print(
-                f"ERROR: {out} exists with design_sha256 "
+            print(f"ERROR: {out} exists with design_sha256 "
                 f"{existing.get('design_sha256')} but the job now hashes to "
                 f"{sched.get('design_sha256')} — the matrix changed under a "
                 f"running schedule. Re-run with --force to reshuffle, and treat "
                 f"the two halves as different experiments.",
                 file=sys.stderr,
-            )
+    )
             return 1
         print(f"--> schedule kept (unchanged design): {out}", file=sys.stderr)
         print(out)

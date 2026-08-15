@@ -4,11 +4,11 @@ facts.py — the fact registry: load, validate, mint, collision-check, leak-chec
 
 RESPONSIBILITY
   Own `$JOB_DIR/.registry/facts.yaml` — the file that decides what every run is
-  measuring. Four jobs, in the order run.sh performs them (§5.2):
+  measuring. Four jobs, in the order run.sh performs them:
 
-    1. LOAD + VALIDATE   the authored registry: one fact per task (D1), a gist, a
+    1. LOAD + VALIDATE   the authored registry: one fact per task, a gist, a
                          statement carrying `{nonce}`, clause pairs, a detector
-                         binding, and the tier-(b) paraphrase regexes that §4.5
+                         binding, and the tier-(b) paraphrase regexes that
                          requires FROZEN BEFORE ANY DATA EXISTS.
     2. MINT              nonces (and distractor tokens) via nonce.mint(), then
                          assert they are pairwise disjoint and absent from the
@@ -19,7 +19,7 @@ RESPONSIBILITY
                          those lets the model name the fact without ever reading
                          the workspace — confabulation arriving through a channel
                          the `confab_rate <= 0.05` gate cannot see.
-    4. PRIOR-CHECK       the three-stage counter-prior gate (§6.3).
+    4. PRIOR-CHECK       the three-stage counter-prior gate.
 
 INPUTS
   facts.yaml (or facts.json — JSON is valid YAML, and the system python3 has no
@@ -31,7 +31,7 @@ OUTPUTS
   `$JOB_DIR/.registry/facts.yaml` (mode 600 inside a mode-700 directory, V9);
   `$JOB_DIR/.registry/prior_check/<task_id>.json`.
 
-THE THREE-STAGE GATE, AND WHY IT IS NOT ONE STAGE (§6.3)
+THE THREE-STAGE GATE, AND WHY IT IS NOT ONE STAGE
   The mandate must be something a competent agent would NOT do by default while
   still being a legitimate solution — otherwise `used` measures nothing. The
   original single-stage gate was mathematically unsatisfiable: 0/10 has a Wilson
@@ -45,9 +45,9 @@ THE THREE-STAGE GATE, AND WHY IT IS NOT ONE STAGE (§6.3)
   PRE-REGISTERED as excluded from primary — the exclusion is decided before any
   treatment data exists, which is what removes the forking-paths risk.
 
-  NOTE (measured, not inherited): §6.3 quotes "Wilson upper 0/12 = 0.265".
+  NOTE (measured, not inherited): the spec quoted "Wilson upper 0/12 = 0.265".
   wilson_upper(0, 12) computes 0.2425 with the standard score interval, which
-  also reproduces §6.3's own worked example 0/10 = 0.278 exactly. The gate is
+  also reproduces the spec's own worked example 0/10 = 0.278 exactly. The gate is
   therefore slightly STRONGER than the doc claims; the doc's 0.265 does not
   reproduce and is treated as a transcription slip.
 
@@ -70,6 +70,7 @@ import math
 import os
 import re
 import sys
+import dataclasses
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Sequence
@@ -96,7 +97,7 @@ TIERS = ("A", "B")
 
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 
-# Gate constants (§6.3).
+# Gate constants.
 GATE2_MIN_N = 12
 GATE2_WEAK_FIRES = 1        # D2: 1 fire in >= 12 ctrl runs => `weak`, not rejected
 GATE1B_MIN_NEAR_MISS = 2
@@ -160,7 +161,7 @@ def dump_mapping(data: Mapping[str, Any]) -> str:
 class DetectorBinding:
     """Which of the 6 closed predicates decides `used`, and with what params.
 
-    §4.3: Tier-B generation picks a registry `name` and fills `params`; it never
+    Tier-B generation picks a registry `name` and fills `params`; it never
     authors a predicate. The predicates themselves live in lib/wur/detectors.py.
     """
 
@@ -173,7 +174,7 @@ class DetectorBinding:
 
 @dataclass(frozen=True)
 class FactSpec:
-    """One planted fact. Exactly one per task (D1)."""
+    """One planted fact. Exactly one per task."""
 
     fact_id: str
     task_id: str
@@ -220,36 +221,32 @@ class FactSpec:
 
         A distractor's own `{token}` is substituted per distractor: `d2-dist`
         measures `wrong_value_in_slot` — "a distractor's token landed in the
-        critical slot" (§4.4) — which is only observable if the token is
+        critical slot" — which is only observable if the token is
         actually IN the planted document, not merely minted into the registry.
         """
-        ds = (
-            tuple(
-                render_mod.Distractor(
-                    token=str(d.get("token") or ""),
+        ds = (tuple(render_mod.Distractor(token=str(d.get("token") or ""),
                     statement=self._sub(str(d.get("statement", ""))).replace(
                         "{token}", str(d.get("token") or "")
                     ),
                     label=str(d.get("label") or "Convention"),
-                )
+            )
                 for d in self.distractors
             )
             if with_distractors
             else ()
-        )
-        return render_mod.CanonicalFact(
-            fact_id=self.fact_id,
+            )
+        return render_mod.CanonicalFact(fact_id=self.fact_id,
             title=self.title,
             statement=self.materialized_statement(),
             clauses=tuple(
                 render_mod.Clause(label=str(c["label"]), text=self._sub(str(c["text"])))
                 for c in self.clauses
-            ),
+                    ),
             nonce=self.nonce,
             task_id=self.task_id,
             bucket=self.bucket,
             distractors=ds,
-        )
+            )
 
     def _sub_deep(self, obj: Any) -> Any:
         if isinstance(obj, str):
@@ -270,6 +267,7 @@ class FactSpec:
         if self.detector is None:
             raise RegistryError(f"{self.fact_id}: no detector binding")
         return {"name": self.detector.name, "params": self._sub_deep(dict(self.detector.params))}
+
 
     def card(self) -> dict:
         """protocol.FactCard.from_dict()-shaped dict — the mention-matching identity."""
@@ -322,8 +320,7 @@ class FactSpec:
         if missing:
             raise RegistryError(f"fact entry missing required key(s): {missing} in {dict(d)!r}")
         det = d.get("detector")
-        return cls(
-            fact_id=str(d["fact_id"]),
+        return cls(fact_id=str(d["fact_id"]),
             task_id=str(d["task_id"]),
             title=str(d["title"]),
             statement=str(d["statement"]),
@@ -338,18 +335,17 @@ class FactSpec:
                 DetectorBinding(name=str(det.get("name")), params=dict(det.get("params") or {}))
                 if isinstance(det, Mapping) and det.get("name")
                 else None
-            ),
+                    ),
             control=dict(d["control"]) if isinstance(d.get("control"), Mapping) else None,
             distractors=tuple(dict(x) for x in (d.get("distractors") or ())),
             nonce=(str(d["nonce"]) if d.get("nonce") else None),
             prior_check=dict(d["prior_check"]) if isinstance(d.get("prior_check"), Mapping) else None,
             notes=str(d.get("notes") or ""),
-            verification=(
-                dict(d["verification"]) if isinstance(d.get("verification"), Mapping)
+            verification=(dict(d["verification"]) if isinstance(d.get("verification"), Mapping)
                 else (dict(d["pack"]) if isinstance(d.get("pack"), Mapping) else None)
-            ),
+                    ),
             pack_dir=(str(d["pack_dir"]) if d.get("pack_dir") else None),
-        )
+            )
 
 
 @dataclass
@@ -385,15 +381,14 @@ class Registry:
         except KeyError:
             raise RegistryError(f"no fact registered for task_id {task_id!r}") from None
 
-    def nonce_set(
-        self, *, repo_dir: str | Path | None = None, include_distractors: bool = True
+    def nonce_set(self, *, repo_dir: str | Path | None = None, include_distractors: bool = True
     ) -> nonce_mod.NonceSet:
         """Every token this job scans for, as one compiled alternation.
 
         Distractor tokens ride along under `<fact_id>::distractor::<i>` labels so
         that disjointness is checked against the real nonces — a distractor that
         overlapped its own fact's token would make `wrong_value_in_slot`
-        (§4.4, the `d2-dist` discrimination measure) unreadable.
+        (the `d2-dist` discrimination measure) unreadable.
         """
         nonces: dict[str, str] = {}
         forms: dict[str, list[str]] = {}
@@ -440,7 +435,7 @@ def load_dir_mapping(path: str | Path) -> dict:
         raise RegistryError(
             f"{root}: no */{FACT_PACK_NAME} found — point --facts at a registry file "
             f"or at a directory of per-task packs"
-        )
+            )
     header: dict[str, Any] = {}
     merged: list[dict] = []
     seen: dict[str, Path] = {}
@@ -454,7 +449,7 @@ def load_dir_mapping(path: str | Path) -> dict:
                 raise RegistryError(
                     f"{pack}: {key}={val!r} disagrees with {header[key]!r} set by an "
                     f"earlier pack; the header is a property of the whole registry"
-                )
+            )
             header[key] = val
         entries = d.get("facts")
         if not isinstance(entries, list) or not entries:
@@ -464,7 +459,7 @@ def load_dir_mapping(path: str | Path) -> dict:
             if fid in seen:
                 raise RegistryError(
                     f"{pack}: duplicate fact_id {fid!r} (already defined by {seen[fid]})"
-                )
+            )
             seen[fid] = pack
             entry = dict(entry or {})
             # The near-miss / reference patches named in `verification` are relative
@@ -489,15 +484,14 @@ def load(path: str | Path) -> Registry:
         # patches beside it, so an unstamped registry loses Gate 1b on the way in.
         here = str(p.resolve().parent)
         facts = [{**dict(f), "pack_dir": (f or {}).get("pack_dir") or here} for f in facts]
-    return Registry(
-        facts=[FactSpec.from_dict(f) for f in facts],
+    return Registry(facts=[FactSpec.from_dict(f) for f in facts],
         schema_version=str(d.get("schema_version") or REGISTRY_SCHEMA_VERSION),
         tier=str(d.get("tier") or "A"),
         salt=str(d.get("salt") or nonce_mod.DEFAULT_SALT),
         repo_sha=(str(d["repo_sha"]) if d.get("repo_sha") else None),
         nonce_prefix=str(d.get("nonce_prefix") or nonce_mod.DEFAULT_PREFIX),
         source_path=Path(path),
-    )
+            )
 
 
 def save(reg: Registry, path: str | Path, *, mode: int = REGISTRY_FILE_MODE) -> Path:
@@ -515,7 +509,7 @@ def save(reg: Registry, path: str | Path, *, mode: int = REGISTRY_FILE_MODE) -> 
     return p
 
 
-# ── registry location (§5.3) ─────────────────────────────────────────────────
+# ── registry location ─────────────────────────────────────────────────
 def registry_dir(job_dir: str | Path, *, create: bool = True) -> Path:
     """`$JOB_DIR/.registry`, mode 700.
 
@@ -538,18 +532,42 @@ def registry_path(job_dir: str | Path, *, create: bool = False) -> Path:
     return registry_dir(job_dir, create=create) / REGISTRY_BASENAME
 
 
-def install(source: str | Path, job_dir: str | Path) -> Path:
-    """Copy an authored registry into `$JOB_DIR/.registry/facts.yaml` (mode 600)."""
+def install(source: str | Path, job_dir: str | Path, salt: str | None = None) -> Path:
+    """Copy an authored registry into `$JOB_DIR/.registry/facts.yaml` (mode 600).
+
+    `salt` overrides the registry's own — it is THE deployment secret. Every nonce is
+    `blake2s(salt | repo_sha | fact_id)`, and `repo_sha` and `fact_id` are both public
+    in any published checkout, so with the default salt every nonce in this repo is
+    recomputable by anyone holding it in one command. That does not corrupt a run by
+    itself, but a model that has seen the repository could emit a nonce it never read,
+    which is precisely the thing `read` is trying to measure.
+
+    Leave it at the default for smoke runs and reproducibility work. Set it — via
+    `ATLAS_NONCE_SALT`, or `salt:` in the authored registry — before collecting
+    anything you intend to publish or believe.
+    """
     reg = load(source)
+    if salt and salt != reg.salt:
+        reg.salt = salt
+        # Any nonce minted under the old salt is now wrong for this registry, and a
+        # stale one would be asserted-absent against the wrong material. Drop them so
+        # `mint` re-derives every one from the new secret. FactSpec is frozen, so this
+        # is a rebuild rather than an assignment.
+        reg.facts = [dataclasses.replace(f, nonce=None) for f in reg.facts]
     return save(reg, registry_path(job_dir, create=True))
+
+
+def salt_is_default(reg_or_path) -> bool:
+    """True when the registry still uses the public default salt."""
+    reg = reg_or_path if isinstance(reg_or_path, Registry) else load(reg_or_path)
+    return reg.salt == nonce_mod.DEFAULT_SALT
 
 
 # ── validation ───────────────────────────────────────────────────────────────
 # Generic text a tier-(b) paraphrase regex must NOT match. If it does, the regex
 # will fire on control runs and manufacture the confabulation that the
 # `confab_rate <= 0.05` pilot gate exists to detect.
-GENERIC_CORPUS: tuple[str, ...] = (
-    *render_mod.CONTROL_BANK,
+GENERIC_CORPUS: tuple[str,...] = (*render_mod.CONTROL_BANK,
     *render_mod.CONTROL_STATEMENTS,
     *(f"{label}: {text}" for label, text in render_mod.CONTROL_CLAUSE_BANK),
     render_mod.render_filler("docs/index.md"),
@@ -558,7 +576,7 @@ GENERIC_CORPUS: tuple[str, ...] = (
     "Refactor the export module and add unit tests for the new helper.",
     "Read the repository documentation before changing the code.",
     "I will now run the test suite and inspect the failures.",
-)
+            )
 
 
 def validate(reg: Registry) -> list[str]:
@@ -601,8 +619,7 @@ def validate(reg: Registry) -> list[str]:
                 errs.append(f"{tag}: every clause needs a non-empty label and text")
 
         if not f.paraphrase_regexes:
-            errs.append(
-                f"{tag}: at least one tier-(b) paraphrase regex is required and §4.5 requires "
+            errs.append(f"{tag}: at least one tier-(b) paraphrase regex is required and  requires "
                 "them frozen in facts.yaml BEFORE any data"
             )
         for pat in f.paraphrase_regexes:
@@ -616,10 +633,9 @@ def validate(reg: Registry) -> list[str]:
                 continue
             hits = [c for c in GENERIC_CORPUS if rx.search(c)]
             if hits:
-                errs.append(
-                    f"{tag}: paraphrase regex {pat!r} matches generic text "
+                errs.append(f"{tag}: paraphrase regex {pat!r} matches generic text "
                     f"({hits[0][:60]!r}...) — it would fire on control runs and breach confab_rate"
-                )
+            )
 
         if f.detector is None:
             errs.append(f"{tag}: a detector binding is required (`used` is undefined without one)")
@@ -637,7 +653,7 @@ def validate(reg: Registry) -> list[str]:
                     f"{tag}: distractor[{i}] carries no {{token}} placeholder, so its minted token "
                     "would never reach the workspace and `wrong_value_in_slot` would be "
                     "unmeasurable — add {token} to the statement, or set tokenless: true"
-                )
+            )
     return errs
 
 
@@ -646,8 +662,7 @@ def lint(reg: Registry) -> list[str]:
     warns: list[str] = []
     for f in reg.facts:
         if not f.control:
-            warns.append(
-                f"{f.fact_id}: no hand-authored `control:` block — render.control_fact() will "
+            warns.append(f"{f.fact_id}: no hand-authored `control:` block — render.control_fact will "
                 "generate a length-matched generic twin, which matches structure but not register"
             )
         if f.nonce:
@@ -656,7 +671,7 @@ def lint(reg: Registry) -> list[str]:
                 warns.append(
                     f"{f.fact_id}: no paraphrase regex matches the fact's own statement — "
                     "tier (b) will only ever fire on wordings nobody has checked"
-                )
+            )
         if not f.distractors:
             warns.append(f"{f.fact_id}: no distractors, so the `d2-dist` arm degenerates to `d2`")
     warns += _lint_detectors(reg)
@@ -697,8 +712,7 @@ def _lint_detectors(reg: Registry) -> list[str]:
 
 
 # ── minting ──────────────────────────────────────────────────────────────────
-def mint_nonces(
-    reg: Registry,
+def mint_nonces(reg: Registry,
     *,
     repo_sha: str | None = None,
     salt: str | None = None,
@@ -720,7 +734,7 @@ def mint_nonces(
     """
     sha = repo_sha or reg.repo_sha
     if not sha:
-        raise RegistryError("mint_nonces needs a repo_sha (§6.4: the mint needs a stable repo_sha)")
+        raise RegistryError("mint_nonces needs a repo_sha: the mint needs a stable repo_sha")
     s = salt or reg.salt
 
     # Tokens already in the registry are the ones a fresh mint must dodge. Under
@@ -744,12 +758,10 @@ def mint_nonces(
             elif force or not d.get("token"):
                 d["token"] = nonce_mod.mint(
                     f"{f.fact_id}|distractor|{i}", sha, s, prefix=reg.nonce_prefix, avoid=minted
-                )
+            )
                 minted.append(d["token"])
             ds.append(d)
-        out.append(
-            FactSpec(
-                fact_id=f.fact_id,
+        out.append(FactSpec(fact_id=f.fact_id,
                 task_id=f.task_id,
                 title=f.title,
                 statement=f.statement,
@@ -771,17 +783,16 @@ def mint_nonces(
                 verification=f.verification,
                 pack_dir=f.pack_dir,
             )
-        )
+            )
 
-    new = Registry(
-        facts=out,
+    new = Registry(facts=out,
         schema_version=reg.schema_version,
         tier=reg.tier,
         salt=s,
         repo_sha=sha,
         nonce_prefix=reg.nonce_prefix,
         source_path=reg.source_path,
-    )
+            )
     ns = new.nonce_set(repo_dir=repo_dir)
     ns.assert_disjoint()
     if repo_dir is not None:
@@ -789,21 +800,9 @@ def mint_nonces(
     return new
 
 
-def collision_check(reg: Registry, *, repo_dir: str | Path | None = None,
-                    baseline_sha: str | None = None) -> dict:
-    """Re-run both nonce invariants over an already-minted registry."""
-    ns = reg.nonce_set(repo_dir=repo_dir)
-    rep = {"disjoint": ns.assert_disjoint(), "absent_from_repo": None}
-    if repo_dir is not None:
-        rep["absent_from_repo"] = ns.assert_absent_from_repo(
-            baseline_sha or reg.repo_sha or "HEAD", repo_dir=repo_dir
-        )
-    return rep
-
-
 # ── leak check ───────────────────────────────────────────────────────────────
 # Everything the harness itself puts in front of the model, or uses to grade it.
-# §5.2 names five: criteria.json, the task text, the accept text, the probe text,
+# names five: criteria.json, the task text, the accept text, the probe text,
 # and the self-analysis prompt.
 def frozen_protocol_texts() -> dict[str, str]:
     """The frozen probe/pacing/retry/resume/budget strings, by name.
@@ -822,8 +821,7 @@ def frozen_protocol_texts() -> dict[str, str]:
     return {f"protocol.{k}": v for k, v in protocol.FROZEN_STRINGS.items()}
 
 
-def collect_leak_texts(
-    job_dir: str | Path,
+def collect_leak_texts(job_dir: str | Path,
     *,
     repo_root: str | Path | None = None,
     extra_paths: Iterable[str | Path] = (),
@@ -858,6 +856,7 @@ def collect_leak_texts(
                         texts[f"job.yaml:tasks[{tid}].{key}"] = str(t[key])
     else:
         missing.append(str(jy))
+
 
     grader_files = sorted((job / "grader").rglob("criteria.json")) if (job / "grader").exists() else []
     for c in grader_files:
@@ -901,13 +900,13 @@ def leak_check(reg: Registry, texts: Mapping[str, str]) -> dict:
     return rep
 
 
-# ── the three-stage prior-check gate (§6.3) ──────────────────────────────────
+# ── the three-stage prior-check gate ──────────────────────────────────
 def wilson_upper(k: int, n: int, z: float = Z_95) -> float:
     """Upper bound of the Wilson score interval for k fires in n trials.
 
-    Reproduces §6.3's worked example exactly: wilson_upper(0, 10) == 0.2775…,
+    Reproduces the worked example exactly: wilson_upper(0, 10) == 0.2775…,
     which is the "0/10 gives 0.278, above its own 0.25 threshold" that killed the
-    single-stage gate. (§6.3 also quotes 0/12 = 0.265; this computes 0.2425 —
+    single-stage gate. (The spec also quotes 0/12 = 0.265; this computes 0.2425 —
     see the module docstring.)
     """
     if n <= 0:
@@ -966,7 +965,7 @@ def _import_detectors():
     except ImportError as e:
         raise DetectorUnavailable(
             f"lib/wur/detectors.py is not importable — Gate 1 and Gate 1b cannot run ({e})"
-        ) from e
+            ) from e
 
 
 def load_detector_runner() -> DetectorRunner:
@@ -974,7 +973,7 @@ def load_detector_runner() -> DetectorRunner:
 
     detectors.py owns the closed 6-predicate registry and exposes
     `run_detector(name, params, DetectorContext, *, diff_only=False)`. It is a
-    separately owned file (§6.4), so it is imported lazily and adapted rather
+    separately owned file, so it is imported lazily and adapted rather
     than depended on at module scope: Gate 2 consumes already-recorded control
     outcomes and must keep working even when the registry is absent.
 
@@ -989,8 +988,7 @@ def load_detector_runner() -> DetectorRunner:
 
         def runner(binding: Mapping[str, Any], target: Mapping[str, Any]) -> Mapping[str, Any]:
             t = {k: v for k, v in dict(target).items() if k not in ("kind", "id")}
-            return run(
-                binding.get("name"),
+            return run(binding.get("name"),
                 dict(binding.get("params") or {}),
                 ctx_cls.from_dict(t),
                 diff_only=bool(t.get("diff_only")),
@@ -1001,9 +999,8 @@ def load_detector_runner() -> DetectorRunner:
         fn = getattr(mod, name, None)
         if callable(fn):
             return fn
-    raise DetectorUnavailable(
-        "lib/wur/detectors.py exposes neither run_detector(name, params, ctx) nor run()"
-    )
+    raise DetectorUnavailable("lib/wur/detectors.py exposes neither run_detector(name, params, ctx) nor run"
+            )
 
 
 def _fire(runner: DetectorRunner, fact: FactSpec, target: Mapping[str, Any]) -> dict:
@@ -1021,7 +1018,7 @@ def _fire(runner: DetectorRunner, fact: FactSpec, target: Mapping[str, Any]) -> 
         raise RegistryError(
             f"{fact.fact_id}: detector {fact.detector.name!r} errored on target "
             f"{target.get('id') or target.get('kind')!r}: {res['error']}"
-        )
+            )
     return {
         "target": target.get("id") or target.get("kind") or "?",
         "kind": target.get("kind"),
@@ -1032,6 +1029,8 @@ def _fire(runner: DetectorRunner, fact: FactSpec, target: Mapping[str, Any]) -> 
     }
 
 
+
+
 def gate1(fact: FactSpec, runner: DetectorRunner, base_target: Mapping[str, Any]) -> GateResult:
     """Stage 1: the detector must NOT fire on the pristine base tree. 0 agent runs.
 
@@ -1040,8 +1039,7 @@ def gate1(fact: FactSpec, runner: DetectorRunner, base_target: Mapping[str, Any]
     and the arm measures nothing.
     """
     ev = _fire(runner, fact, {"kind": "pristine_base", **dict(base_target)})
-    return GateResult(
-        gate="gate1",
+    return GateResult(gate="gate1",
         fact_id=fact.fact_id,
         admitted=not ev["fired"],
         fires=int(ev["fired"]),
@@ -1050,11 +1048,10 @@ def gate1(fact: FactSpec, runner: DetectorRunner, base_target: Mapping[str, Any]
         wilson_upper=None,
         detail="detector must not fire on the pristine base tree",
         evidence=(ev,),
-    )
+            )
 
 
-def gate1b(
-    fact: FactSpec,
+def gate1b(fact: FactSpec,
     runner: DetectorRunner,
     targets: Sequence[Mapping[str, Any]],
     *,
@@ -1079,8 +1076,7 @@ def gate1b(
     detail = f"{len(ts)} targets ({len(near)} near-miss); need >= {min_near_miss} near-miss"
     if not enough:
         detail += " — INSUFFICIENT, gate cannot be passed"
-    return GateResult(
-        gate="gate1b",
+    return GateResult(gate="gate1b",
         fact_id=fact.fact_id,
         admitted=(fires == 0 and enough),
         fires=fires,
@@ -1089,17 +1085,16 @@ def gate1b(
         wilson_upper=wilson_upper(fires, len(ts)) if ts else None,
         detail=detail,
         evidence=ev,
-    )
+            )
 
 
-def gate2(
-    fact: FactSpec,
+def gate2(fact: FactSpec,
     ctrl_fires: Sequence[bool] | int,
     n: int | None = None,
     *,
     min_n: int = GATE2_MIN_N,
 ) -> GateResult:
-    """Stage 2: >= 12 `ctrl` runs, admit at 0 fires (§6.3). 12 agent runs.
+    """Stage 2: >= 12 `ctrl` runs, admit at 0 fires. 12 agent runs.
 
     Accepts either a sequence of per-run booleans or (fires, n). D2: exactly one
     fire in >= min_n runs is `weak` — admitted, but pre-registered as excluded
@@ -1114,8 +1109,7 @@ def gate2(
         seq = list(ctrl_fires)
         fires, total = sum(1 for x in seq if x), len(seq)
     if total < min_n:
-        return GateResult(
-            gate="gate2",
+        return GateResult(gate="gate2",
             fact_id=fact.fact_id,
             admitted=False,
             fires=fires,
@@ -1123,30 +1117,26 @@ def gate2(
             agent_runs=total,
             wilson_upper=wilson_upper(fires, total) if total else None,
             detail=f"only {total} control runs; Gate 2 needs >= {min_n}",
-        )
-    return GateResult(
-        gate="gate2",
+            )
+    return GateResult(gate="gate2",
         fact_id=fact.fact_id,
         admitted=fires <= GATE2_WEAK_FIRES,
         fires=fires,
         n=total,
         agent_runs=total,
         wilson_upper=wilson_upper(fires, total),
-        detail=(
-            "0 fires — admitted"
+        detail=("0 fires — admitted"
             if fires == 0
-            else (
-                f"{fires} fire in {total} control runs — WEAK (D2: admitted, pre-registered "
+            else (f"{fires} fire in {total} control runs — WEAK (admitted, pre-registered "
                 "as excluded from primary)"
                 if fires == GATE2_WEAK_FIRES
                 else f"{fires} fires in {total} control runs — rejected"
             )
-        ),
-    )
+                    ),
+            )
 
 
-def prior_check(
-    fact: FactSpec,
+def prior_check(fact: FactSpec,
     g1: GateResult | None = None,
     g1b: GateResult | None = None,
     g2: GateResult | None = None,
@@ -1155,7 +1145,7 @@ def prior_check(
 
     status:
       pass  every run stage admitted with 0 fires
-      weak  Gate 2 ran with exactly 1 fire in >= 12 controls (D2)
+      weak  Gate 2 ran with exactly 1 fire in >= 12 controls
       fail  any stage rejected
       n_a   Gate 1/1b have not been run (nothing has been checked yet)
     """
@@ -1219,14 +1209,13 @@ def _cli_mint(a: argparse.Namespace) -> int:
         for e in errs:
             print(f"ERROR {e}", file=sys.stderr)
         return 1
-    reg = mint_nonces(
-        reg,
+    reg = mint_nonces(reg,
         repo_sha=a.repo_sha,
         salt=a.salt,
         repo_dir=a.repo_dir,
         baseline_sha=a.baseline_sha,
         force=a.force,
-    )
+            )
     out = Path(a.out) if a.out else (registry_path(a.job_dir, create=True) if a.job_dir else Path(a.facts))
     save(reg, out)
     print(json.dumps({"registry": str(out), "nonces": {f.fact_id: f.nonce for f in reg.facts}}, indent=2))
@@ -1305,7 +1294,7 @@ def _cli_prior_check(a: argparse.Namespace) -> int:
             gate=d["gate"], fact_id=d["fact_id"], admitted=d["admitted"], fires=d["fires"],
             n=d["n"], agent_runs=d.get("agent_runs", 0), wilson_upper=d.get("wilson_upper"),
             detail=d.get("detail", ""), evidence=tuple(d.get("evidence") or ()),
-        )
+            )
     payload = prior_check(fact, loaded.get("gate1"), loaded.get("gate1b"), loaded.get("gate2"))
     p = write_prior_check(a.job_dir, payload)
     print(json.dumps({**payload, "path": str(p)}, indent=2))

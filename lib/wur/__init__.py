@@ -8,11 +8,11 @@ RESPONSIBILITY
 
 INPUTS / OUTPUTS
   None. This file deliberately performs no work at import time: gate.py runs
-  inside a synchronous PreToolUse hook on every tool call (§6.2) and a hook must
+  inside a synchronous PreToolUse hook on every tool call and a hook must
   always exit 0 and stay cheap, so importing the package must never pull in the
   derivation chain.
 
-LAYOUT (IMPLEMENTATION.md §5.2)
+LAYOUT
   protocol.py   frozen probe/pacing text, probe_id(), parse ladder, slot classes
   cadence.py    seeded probe schedule — the only RNG in the subsystem
   gate.py       PreToolUse barrier + SessionStart marker; fail-open, exit 0
@@ -23,7 +23,7 @@ LAYOUT (IMPLEMENTATION.md §5.2)
   preflight/canary/schedule/settings/validate/aggregate.py   pipeline + hygiene
 
   Every module here observes; only driver.py, gate.py and plant.py write
-  anything the agent can reach, and none of them writes inside workspace/ (§5.1).
+  anything the agent can reach, and none of them writes inside workspace/.
 
 MODULE IMPORT NOTE
   protocol.py and cadence.py have no intra-package imports, so both
