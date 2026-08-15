@@ -1,0 +1,87 @@
+diff --git a/ledgerline/cli.py b/ledgerline/cli.py
+index 6673f05..f4b52ba 100644
+--- a/ledgerline/cli.py
++++ b/ledgerline/cli.py
+@@ -61,6 +61,7 @@ def build_parser() -> argparse.ArgumentParser:
+     p_report.add_argument("--period", help="2024 | 2024-Q4 | 2024-10 | START:END")
+     p_report.add_argument("--account", help="account code, for reports that take one")
+     p_report.add_argument("--currency", help="restrict the report to one currency")
++    p_report.add_argument("--convert-to", help="convert every amount into this currency")
+     p_report.add_argument("--rates", help="path to a base,quote,rate CSV")
+     p_report.add_argument("--limit", type=int, default=0)
+     p_report.add_argument("--json", action="store_true", help="emit JSON")
+@@ -88,6 +89,7 @@ def _options(args: argparse.Namespace) -> ReportOptions:
+         period=Period.parse(args.period) if args.period else None,
+         account=args.account,
+         currency=args.currency,
++        convert_to=getattr(args, "convert_to", None),
+         rates=RateTable.load(args.rates) if args.rates else None,
+         limit=args.limit,
+     )
+diff --git a/ledgerline/reports.py b/ledgerline/reports.py
+index b86ca1b..640e029 100644
+--- a/ledgerline/reports.py
++++ b/ledgerline/reports.py
+@@ -37,6 +37,7 @@ class ReportOptions:
+     period: Period | None = None
+     account: str | None = None
+     currency: str | None = None
++    convert_to: str | None = None
+     rates: object | None = None
+     include_closed: bool = False
+     limit: int = 0
+@@ -183,12 +184,20 @@ def trial_balance(ledger: Ledger, options: ReportOptions) -> Report:
+     """
+     scope = options.scoped(ledger)
+     wanted = options.currency.upper() if options.currency else None
++    target = options.convert_to.upper() if options.convert_to else None
++    if target and options.rates is None:
++        raise ReportError("converting a trial balance needs a rate table (--rates)")
+     rows: list[list[str]] = []
+     totals: dict[str, Money] = {}
+     for account, per_currency in scope.balances().items():
+         for currency, amount in per_currency.items():
+             if wanted and currency != wanted:
+                 continue
++            if target and currency != target:
++                amount = amount.scale(
++                    options.rates.direct(currency, target), currency=target
++                )
++                currency = amount.currency
+             rows.append(
+                 [account, type_of(account), currency, _fmt(_signed(account, amount))]
+             )
+@@ -202,7 +211,8 @@ def trial_balance(ledger: Ledger, options: ReportOptions) -> Report:
+             "period": _period_label(options),
+             "currencies": sorted(totals),
+             "residual": {c: m.minor for c, m in totals.items()},
+-            "converted": False,
++            "converted": bool(target),
++            "converted_to": target,
+         },
+     )
+ 
+diff --git a/tests/test_reports.py b/tests/test_reports.py
+index b25240c..a0c9b75 100644
+--- a/tests/test_reports.py
++++ b/tests/test_reports.py
+@@ -112,3 +112,19 @@ def test_register_replaces_a_name(ledger: Ledger):
+         assert run("transaction-log", ledger) is marker
+     finally:
+         register("transaction-log", original)
++
++
++def test_trial_balance_converts_into_one_currency(ledger: Ledger, rates):
++    report = run(
++        "trial-balance",
++        ledger,
++        ReportOptions(period=Period.parse("2024-Q4"), convert_to="USD", rates=rates),
++    )
++    assert set(report.column("currency")) == {"USD"}
++    assert report.meta["converted"] is True
++    assert report.meta["converted_to"] == "USD"
++
++
++def test_trial_balance_conversion_needs_rates(ledger: Ledger):
++    with pytest.raises(ReportError):
++        run("trial-balance", ledger, ReportOptions(convert_to="USD"))

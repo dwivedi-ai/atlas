@@ -16,6 +16,18 @@ Inputs:
 Outputs:
   run_record.json   — canonical telemetry record (validated against schema)
   event_log.jsonl   — one line per message/tool event
+
+TOKEN ACCOUNTING (V7 — read this before comparing any number to a historical one)
+  This module used to sum `usage` per transcript LINE. Claude Code writes one line per content
+  block with a byte-identical `usage`, so a 6-block message was counted six times: input
+  inflated 1.00x-4.90x (median 1.50x, pooled 2.09x) and output 1.00x-8.72x (median 1.94x) over
+  116 transcripts. Usage is now attributed once per `message.id` — in the adapter, which zeroes
+  the duplicate lines, and again defensively here, which is idempotent.
+  EVERY TOKEN FIGURE THE EXISTING CONTEXT-LADDER EXPERIMENT PRODUCED IS INFLATED by a
+  run-varying factor. `tokens.accounting_version` ("per_line_v1" vs "per_message_v2") is
+  stamped on every record so the two generations can never be pooled by accident.
+  `turns_total` (distinct assistant message.id) is the honest turn count; `message_count`
+  remains the LINE count and was measured at up to 13.67x turns_total.
 """
 
 from __future__ import annotations
@@ -26,9 +38,12 @@ import sys
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
 
-import yaml
+# NOTE: `yaml` is imported lazily inside main() only. The library path
+# (telemetry.py -> extract.core.extract) must import cleanly on a stock python3,
+# which has neither yaml nor jsonschema until install.sh has run.
+
+ACCOUNTING_VERSION = "per_message_v2"
 
 
 # ── Tool classification ──────────────────────────────────────────────────────
@@ -121,15 +136,90 @@ def shannon_entropy(items: list[str]) -> float | None:
 
 # ── Core extraction ──────────────────────────────────────────────────────────
 
-def extract(
-    events: list,           # list of NormalizedEvent from adapter
+def _dedupe_usage(events: list) -> list:
+    """V7: keep the first event per `message.id`, drop the rest, for TOKEN PURPOSES ONLY.
+
+    The claude_code adapter already zeroes duplicate lines' usage, so this is idempotent
+    there; it is the authoritative rule for any caller that builds NormalizedEvents another
+    way. Events with no `message_id` (every user line, and codex/gemini/agy, which have no
+    such concept) are never deduped — they are all kept.
+    """
+    seen: set[str] = set()
+    out = []
+    for e in events:
+        mid = getattr(e, "message_id", "") or ""
+        if mid:
+            if mid in seen:
+                continue
+            seen.add(mid)
+        out.append(e)
+    return out
+
+
+def _probe_summary(probe_events: list[dict] | None) -> dict:
+    """Fold the WUR probe rows into the operations counters.
+
+    `probe_events` is an OPTIONAL, KEYWORD-ONLY list of dicts — one per probe interaction,
+    normally `probes.jsonl` as produced by lib/wur/probes.py. Only these keys are read, and
+    every one of them is optional:
+
+      outcome           "answered" | "superseded" | "unanswered" | "refused"
+      kind              "probe" (default) | "resume"  — resumes are counted separately
+      turn_message_ids  [str, ...]  assistant message.ids that ARE probe turns
+      tool_use_ids      [str, ...]  tool calls issued inside a probe turn
+
+    The two id lists are what makes `tool_calls_task` (the difficulty-band metric)
+    computable: tool_calls_total INCLUDES probe turns, tool_calls_task excludes them.
+    Passing None leaves every probe counter null and tool_calls_task == tool_calls_total,
+    which is the correct answer for a ladder run and for the no-probe arms.
+    """
+    if probe_events is None:
+        return {"present": False, "sent": None, "answered": None, "resumes": None,
+                "message_ids": set(), "tool_use_ids": set()}
+    sent = answered = resumes = 0
+    message_ids: set[str] = set()
+    tool_use_ids: set[str] = set()
+    for p in probe_events:
+        if not isinstance(p, dict):
+            continue
+        if (p.get("kind") or "probe") == "resume":
+            resumes += 1
+        else:
+            sent += 1
+            if p.get("outcome") == "answered":
+                answered += 1
+        for mid in p.get("turn_message_ids") or []:
+            if mid:
+                message_ids.add(mid)
+        for tid in p.get("tool_use_ids") or []:
+            if tid:
+                tool_use_ids.add(tid)
+    return {"present": True, "sent": sent, "answered": answered, "resumes": resumes,
+            "message_ids": message_ids, "tool_use_ids": tool_use_ids}
+
+
+def extract(events: list,           # list of NormalizedEvent from adapter
     run_meta: dict,
     task_def: dict,
     grade: dict,
+    *,
+    probe_events: list[dict] | None = None,
+    result_totals: dict | None = None,
 ) -> tuple[dict, list[dict]]:
     """
     Main extraction pass.
     Returns (run_record dict, list of event_log dicts).
+
+    The two extras are KEYWORD-ONLY so the existing positional call
+    `extract(events, enriched, {}, grade)` (telemetry.py) keeps working unchanged for the
+    codex / gemini / antigravity adapters, none of which have probes or a `result` event.
+
+      probe_events   see _probe_summary(); WUR only.
+      result_totals  claude_code.terminal_result(stream_lines) — the authoritative run totals
+                     from the terminal `result` event. When present it OVERRIDES the summed
+                     totals, and the deduped-minus-result delta is recorded: the two were
+                     measured to be exactly equal, so a non-zero delta means the V7 fix
+                     regressed — a free correctness gate.
     """
 
     # ── Pass 1: build flat event log ─────────────────────────────────────────
@@ -174,12 +264,32 @@ def extract(
         if ev.role == "assistant":
             token_curve.append([ev.seq, cumulative_input])
 
-    # ── Pass 2: aggregate tokens ─────────────────────────────────────────────
-    assistant_events = [e for e in events if e.role == "assistant"]
-    total_input = sum(e.tokens_in for e in assistant_events)
-    total_output = sum(e.tokens_out for e in assistant_events)
+    # ── Pass 2: aggregate tokens — ONCE PER MESSAGE, never once per line ─
+    tok_events = _dedupe_usage(events)
+    assistant_events = [e for e in tok_events if e.role == "assistant"]
+    deduped_input = sum(e.tokens_in for e in assistant_events)
+    deduped_output = sum(e.tokens_out for e in assistant_events)
     cache_read = sum(e.cache_read for e in assistant_events)
     cache_write = sum(e.cache_write for e in assistant_events)
+
+    total_input, total_output = deduped_input, deduped_output
+    result_input = result_output = None
+    dedupe_delta_input = dedupe_delta_output = None
+    cost_usd = None
+    if result_totals:
+        result_input = result_totals.get("total_input")
+        result_output = result_totals.get("total_output")
+        cost_usd = result_totals.get("cost_usd")
+        if isinstance(result_input, int):
+            dedupe_delta_input = deduped_input - result_input
+            total_input = result_input
+        if isinstance(result_output, int):
+            dedupe_delta_output = deduped_output - result_output
+            total_output = result_output
+        if isinstance(result_totals.get("cache_read"), int):
+            cache_read = result_totals["cache_read"]
+        if isinstance(result_totals.get("cache_write"), int):
+            cache_write = result_totals["cache_write"]
     total_effective = total_input - int(cache_read * 0.9) + total_output
 
     # ── Pass 3: timing ───────────────────────────────────────────────────────
@@ -189,8 +299,7 @@ def extract(
     wall_clock = ts_delta_seconds(first_ts, last_ts) if first_ts and last_ts else None
 
     # First edit event
-    first_edit_ev = next(
-        (el for el in event_log if el.get("is_edit")), None
+    first_edit_ev = next((el for el in event_log if el.get("is_edit")), None
     )
     first_edit_ts = first_edit_ev["ts"] if first_edit_ev else None
     ttfua = ts_delta_seconds(first_ts, first_edit_ts) if first_ts and first_edit_ts else None
@@ -203,10 +312,13 @@ def extract(
     first_edit_seq = first_edit_ev["seq"] if first_edit_ev else None
     last_edit_seq = edit_events[-1]["seq"] if edit_events else None
 
-    orient_events = [e for e in events if first_edit_seq is None or e.seq < first_edit_seq]
-    impl_events = [e for e in events if first_edit_seq is not None and
+    # Phase sums must also be per-message, not per-line — hence tok_events.
+    orient_events = [e for e in tok_events if first_edit_seq is None or e.seq < first_edit_seq]
+    impl_events = [e for e in tok_events if first_edit_seq is not None and
                    first_edit_seq <= e.seq <= (last_edit_seq or first_edit_seq)]
-    verif_events = [e for e in events if last_edit_seq is not None and e.seq > last_edit_seq]
+    verif_events = [e for e in tok_events if last_edit_seq is not None and e.seq > last_edit_seq]
+
+
 
     def phase_tokens(evs): return sum(e.tokens_in for e in evs if e.role == "assistant")
 
@@ -226,8 +338,7 @@ def extract(
     # Codex reports all tokens in a single turn.completed event that arrives
     # AFTER edit events, so the sequence-based sum yields 0. Fall back to
     # total_input in that case (single-turn agents consume all context upfront).
-    context_acq = sum(
-        el["tokens_in"] for el in event_log
+    context_acq = sum(el["tokens_in"] for el in event_log
         if (first_edit_ev is None or el["seq"] <= first_edit_ev["seq"])
         and el["tokens_in"] > 0
     )
@@ -260,8 +371,7 @@ def extract(
         and el.get("tool_input_summary")
         and (first_edit_ev is None or el["seq"] <= first_edit_ev["seq"])
     ]
-    files_edited = list(dict.fromkeys(
-        _rel_path(el["tool_input_summary"])
+    files_edited = list(dict.fromkeys(_rel_path(el["tool_input_summary"])
         for el in event_log
         if el.get("is_edit") and el.get("tool_input_summary")
     ))
@@ -279,31 +389,70 @@ def extract(
                    if _is_read(el)
                    and (_rel_path(el.get("tool_input_summary") or "")).startswith(".xo/"))
 
-    agents_md_read = any(
-        "AGENTS.md" in (_rel_path(el.get("tool_input_summary") or ""))
+    agents_md_read = any("AGENTS.md" in (_rel_path(el.get("tool_input_summary") or ""))
         for el in event_log if _is_read(el)
     )
-    project_md_read = any(
-        "PROJECT.md" in (_rel_path(el.get("tool_input_summary") or ""))
+    project_md_read = any("PROJECT.md" in (_rel_path(el.get("tool_input_summary") or ""))
         for el in event_log if _is_read(el)
     )
 
     # ── Pass 6: operations ────────────────────────────────────────────────────
+    # turns_total is ASSISTANT-ONLY: user lines carry no message.id, so "distinct message id
+    # count" is not "all messages". message_count below stays the LINE count, which was
+    # measured at up to 13.67x this number — anything that means "turns" must read turns_total.
+    assistant_message_ids = [getattr(e, "message_id", "") or "" for e in events
+                             if e.role == "assistant"]
+    distinct_ids = {m for m in assistant_message_ids if m}
+    turns_total = len(distinct_ids) if distinct_ids else (
+        len([e for e in events if e.role == "assistant"]) or None
+    )
+
+    # The pacing gate: max tool_use blocks per assistant MESSAGE. Counting per stream
+    # line would inherit the V7 bug — one message is split across lines and each line would
+    # look like a 1-tool-call message. Group by message.id first.
+    per_message_tool_uses: Counter = Counter()
+    for e in events:
+        if e.role != "assistant":
+            continue
+        key = getattr(e, "message_id", "") or f"__line_{e.seq}"
+        per_message_tool_uses[key] += len(e.tools or [])
+    max_tool_uses_per_message = max(per_message_tool_uses.values(), default=0)
+
+    probes = _probe_summary(probe_events)
+
     total_tool_calls = sum(1 for el in event_log if el.get("tool"))
+    # tool_calls_task EXCLUDES probe turns — the difficulty-band metric. Without probe
+    # rows there is nothing to exclude, which is the right answer for ladder and no-probe arms.
+    if probes["present"] and (probes["message_ids"] or probes["tool_use_ids"]):
+        probe_tool_calls = 0
+        for e in events:
+            if e.role != "assistant":
+                continue
+            mid = getattr(e, "message_id", "") or ""
+            for t in e.tools or []:
+                if (mid and mid in probes["message_ids"]) or \
+                   (t.get("tool_use_id") and t["tool_use_id"] in probes["tool_use_ids"]):
+                    probe_tool_calls += 1
+        tool_calls_task = max(0, total_tool_calls - probe_tool_calls)
+    else:
+        tool_calls_task = total_tool_calls
+
     bash_calls = sum(1 for el in event_log if el.get("tool") == "Bash")
     search_calls = sum(1 for el in event_log if el.get("tool_class") == "search")
     git_calls = sum(1 for el in event_log if el.get("tool_class") == "git_op")
     web_searches = sum(1 for el in event_log if el.get("tool_class") == "web")
     agent_spawns = sum(1 for el in event_log if el.get("tool_class") == "agent")
-    replanning = sum(
-        1 for el in event_log
+    replanning = sum(1 for el in event_log
         if el.get("is_edit")
         and "PLAN.md" in (el.get("tool_input_summary") or "")
     )
 
     # ── Assemble run_record ───────────────────────────────────────────────────
+    # schema_version "2": every record now carries tokens.accounting_version, which is a v2
+    # key. A record still on disk with "1" (and therefore no accounting_version) is
+    # per_line_v1 by construction and must not be pooled with these.
     run_record = {
-        "schema_version": "1",
+        "schema_version": "2",
         "run": {
             "run_id": run_meta["run_id"],
             "experiment_id": run_meta.get("experiment_id", "unknown"),
@@ -337,6 +486,13 @@ def extract(
             "phase_orientation_input": _orient_tok,
             "phase_implementation_input": _impl_tok,
             "phase_verification_input": _verif_tok,
+            # V7. Never pool a per_line_v1 record with a per_message_v2 one.
+            "accounting_version": ACCOUNTING_VERSION,
+            "result_input": result_input,
+            "result_output": result_output,
+            "dedupe_delta_input": dedupe_delta_input,
+            "dedupe_delta_output": dedupe_delta_output,
+            "cost_usd": cost_usd,
         },
         "timing": {
             "wall_clock_seconds": wall_clock,
@@ -366,7 +522,14 @@ def extract(
             "web_searches": web_searches,
             "agent_spawns": agent_spawns,
             "replanning_events": replanning,
-            "message_count": len(events),
+            "message_count": len(events),          # LINES, not messages — see turns_total
+            "turns_total": turns_total,
+            "tool_calls_task": tool_calls_task,
+            "probes_sent": probes["sent"],
+            "probes_answered": probes["answered"],
+            "resumes_sent": probes["resumes"],
+            "permission_denials": (result_totals or {}).get("permission_denials"),
+            "max_tool_uses_per_message": max_tool_uses_per_message,
         },
         "token_curve": token_curve,
         "raw": {
@@ -377,6 +540,26 @@ def extract(
     }
 
     return run_record, event_log
+
+
+def token_accounting_ok(run_record: dict) -> list[str]:
+    """The free correctness check makes a pilot gate. [] means clean.
+
+    Dedupe-by-message.id was measured to equal the terminal `result.usage` totals EXACTLY
+    (53,292 == 53,292), so any non-zero delta means the V7 fix regressed. Returns problems
+    rather than raising: telemetry must still write a record for a run whose accounting drifted,
+    or the evidence disappears with the failure.
+    """
+    problems = []
+    tok = run_record.get("tokens") or {}
+    if tok.get("accounting_version") != ACCOUNTING_VERSION:
+        problems.append(f"tokens.accounting_version={tok.get('accounting_version')!r} "
+            f"(expected {ACCOUNTING_VERSION!r}) — this record must not be pooled with post-V7 rows")
+    for k in ("dedupe_delta_input", "dedupe_delta_output"):
+        d = tok.get(k)
+        if isinstance(d, int) and d != 0:
+            problems.append(f"tokens.{k}={d} — deduped sum != terminal result.usage; V7 fix regressed")
+    return problems
 
 
 def _infer_provider(agent_id: str) -> str:
@@ -415,6 +598,7 @@ def main():
     with open(args.run_meta) as f:
         run_meta = json.load(f)
 
+    import yaml  # lazy: the library path must import on a python3 without yaml installed
     with open(args.task_file) as f:
         task_def = yaml.safe_load(f)
 
@@ -424,8 +608,10 @@ def main():
     # Determine provider and select adapter
     provider = args.provider or _infer_provider(run_meta.get("agent_id", ""))
     # Inline import to avoid circular import issues when run as script
+    result_totals = None
     if provider == "anthropic":
-        from harness.extract.adapters.claude_code import normalize
+        from harness.extract.adapters.claude_code import normalize, terminal_result
+        result_totals = terminal_result(raw_lines)
     elif provider == "openai":
         from harness.extract.adapters.codex import normalize
     else:
@@ -436,7 +622,10 @@ def main():
     if not events:
         print("WARN: no events extracted from transcript", file=sys.stderr)
 
-    run_record, event_log_entries = extract(events, run_meta, task_def, grade)
+    run_record, event_log_entries = extract(events, run_meta, task_def, grade,
+                                            result_totals=result_totals)
+    for p in token_accounting_ok(run_record):
+        print(f"WARN: {p}", file=sys.stderr)
 
     # Patch raw paths into run_record
     run_dir = Path(args.output).parent

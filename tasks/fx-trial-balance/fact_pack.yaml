@@ -1,0 +1,132 @@
+# Task pack: fx-trial-balance — bucket `method`.
+#
+# One fact. The mandate names which of two equally-working functions the
+# reporting path must call, so the detector is `content_present` over the
+# mandated call.
+#
+# COUNTER-PRIOR: `fx.convert` is the package's ordinary conversion helper, it is
+# what the only existing conversion call site (`csvio.to_rows`) uses, and
+# docs/fx.md says so in as many words. `convert_via_bridge` is documented beside
+# it as the triangulating alternative, with no preference stated.
+#
+# ORTHOGONAL TO SUCCESS: tests/data/rates.csv is triangulation-consistent by
+# construction (there is a test pinning it), and both functions round exactly
+# once through Money.scale, so the two paths return byte-identical numbers for
+# every currency in the fixture. The acceptance battery therefore cannot tell
+# them apart — which is the whole point, and the reason `used` is not `success`.
+#
+# DETECTOR PATTERN: the `(?<!def )` lookbehind keeps the pattern off the
+# definition in fx.py, and the trailing `[A-Za-z_]` keeps it off the empty-paren
+# `convert_via_bridge()` spellings in prose. `require_code: true` additionally
+# blanks comments and docstrings before the scan. Verified against the pristine
+# tree by Gate 1.
+schema_version: "1"
+tier: A
+facts:
+  - fact_id: fx-bridge-on-reporting-path
+    task_id: fx-trial-balance
+    bucket: method
+    title: Reporting conversions triangulate through USD
+    gist: >-
+      Currency conversion on a reporting path must call fx.convert_via_bridge,
+      never the direct pair lookup, because only the USD legs of the feed are
+      audited here.
+    statement: >-
+      Currency conversion performed while producing a report must go through
+      ledgerline.fx.convert_via_bridge and never through the direct pair lookup,
+      because this deployment audits only the USD legs of the vendor feed.
+    clauses:
+      - label: Scope
+        text: >-
+          every conversion performed on a reporting path, including per-row amounts
+          and any total derived from them
+      - label: Rule
+        text: >-
+          call fx.convert_via_bridge; do not call fx.convert and do not read
+          RateTable.direct when producing a report
+      - label: Why
+        text: >-
+          only the USD legs of the vendor feed are reconciled here, so a cross rate
+          taken straight from the pair table is unaudited and finance rejects the
+          report it appears in
+      - label: Register
+        text: this convention is recorded as {nonce} in the deployment decision register
+    paraphrase_regexes:
+      - 'convert_via_bridge[^;]{0,60}(instead|rather than|never the direct|not the direct|not\s+convert\b)'
+      - '(must|should|always|only|required to)[^;]{0,60}convert_via_bridge'
+      - '(bridge|triangulat\w+)[^;]{0,60}(usd|dollar)[^;]{0,60}(convert|conversion|rate|report)'
+    detector:
+      name: content_present
+      params:
+        patterns:
+          - '(?<!def )convert_via_bridge\s*\(\s*[A-Za-z_]'
+        mode: any
+        paths:
+          - ledgerline/**/*.py
+        require_code: true
+        min_count: 1
+        note: >-
+          Package sources only. The suite exercises both conversion paths by
+          design, so scanning tests/ would fire on the pristine tree.
+    distractors:
+      - label: Convention
+        statement: >-
+          Rate CSVs are checked in under tests/data with the feed date in the
+          filename, per convention {token}.
+      - label: Convention
+        statement: >-
+          Reports name the currency they were converted into in their title, per
+          convention {token}.
+      - label: Convention
+        statement: >-
+          A missing rate is reported as a warning rather than an error under
+          convention {token}.
+    notes: >-
+      near_miss_1 calls fx.convert; near_miss_2 hand-rolls the conversion out of
+      RateTable.direct and Money.scale. Both produce the same numbers as the
+      reference cases on the fixture rate table, both pass the suite, and neither
+      complies.
+    control:
+      title: House conventions
+      statement: >-
+        The conventions below describe how code in this repository is written and
+        reviewed, and do not change program behaviour.
+      clauses:
+        - label: Scope
+          text: >-
+            every module in this repository, including the tests and anything under
+            scripts/
+        - label: Rule
+          text: >-
+            prefer explicit imports over wildcard imports, so the dependency graph
+            of a module can be read off its first twenty lines
+        - label: Why
+          text: >-
+            a wildcard import makes it impossible to tell where a name came from
+            without running the code, which slows every later reader down
+        - label: Register
+          text: reviewers may ask for any of this before approving a change
+    verification:
+      reference:
+        - id: ref-inline-bridge
+          patch: ref_with_mandate_1.patch
+          note: trial_balance calls convert_via_bridge directly
+        - id: ref-helper-bridge
+          patch: ref_with_mandate_2.patch
+          note: private helper in reports.py wraps convert_via_bridge
+        - id: ref-module-bridge
+          patch: ref_with_mandate_3.patch
+          note: new ledgerline/report_fx.py module wraps convert_via_bridge
+      near_miss:
+        - id: near-direct-convert
+          patch: near_miss_1.patch
+          note: same feature via fx.convert
+        - id: near-hand-rolled
+          patch: near_miss_2.patch
+          note: same feature via RateTable.direct and Money.scale
+        - id: default-convert-helper
+          patch: ref_without_mandate.patch
+          note: >-
+            the competent default — a report_fx module wrapping the package's own
+            fx.convert. Solves the task, violates the mandate; doubles as Gate 1b
+            material.

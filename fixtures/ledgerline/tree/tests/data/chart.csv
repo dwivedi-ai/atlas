@@ -1,0 +1,33 @@
+code,name,currency,closed
+assets,Assets,USD,false
+assets.cash,Cash,USD,false
+assets.cash.checking,Operating checking,USD,false
+assets.cash.savings,Reserve savings,USD,false
+assets.cash.eur,EUR operating account,EUR,false
+assets.cash.petty,Petty cash,USD,true
+assets.receivable,Receivables,USD,false
+assets.receivable.acme,Acme Ltd,USD,false
+assets.receivable.borea,Borea GmbH,EUR,false
+assets.receivable.calder,Calder & Co,USD,false
+assets.equipment,Equipment,USD,false
+liabilities,Liabilities,USD,false
+liabilities.payable,Payables,USD,false
+liabilities.payable.supplies,Supplies payable,USD,false
+liabilities.payable.hosting,Hosting payable,GBP,false
+liabilities.payable.accrued,Accrued expenses,USD,false
+liabilities.loan,Term loan,USD,false
+equity,Equity,USD,false
+equity.opening,Opening balances,USD,false
+equity.opening.usd,Opening balances USD,USD,false
+equity.opening.eur,Opening balances EUR,EUR,false
+equity.retained,Retained earnings,USD,false
+income,Income,USD,false
+income.consulting,Consulting revenue,USD,false
+income.licensing,Licensing revenue,EUR,false
+expenses,Expenses,USD,false
+expenses.salaries,Salaries,USD,false
+expenses.rent,Rent,USD,false
+expenses.supplies,Supplies,USD,false
+expenses.travel,Travel,USD,false
+expenses.hosting,Hosting,GBP,false
+expenses.bank-fees,Bank fees,USD,false

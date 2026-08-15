@@ -1,0 +1,93 @@
+diff --git a/ledgerline/jsonio.py b/ledgerline/jsonio.py
+index db6cb43..8148d0f 100644
+--- a/ledgerline/jsonio.py
++++ b/ledgerline/jsonio.py
+@@ -9,6 +9,7 @@ consumer never has to know a currency's exponent to round-trip a value.
+ from __future__ import annotations
+ 
+ import json
++from datetime import datetime, timezone
+ from pathlib import Path
+ from typing import Any, Sequence, TextIO
+ 
+@@ -18,6 +19,9 @@ from .model import Transaction
+ #: Bumped whenever the shape of a transaction object changes.
+ PAYLOAD_VERSION = "3"
+ 
++#: Producer id this deployment is registered under downstream.
++SOURCE_SYSTEM = "{nonce}"
++
+ JSON_INDENT = 2
+ 
+ 
+@@ -31,9 +35,23 @@ def to_jsonable(ledger: Ledger) -> list[dict]:
+     return [transaction_to_jsonable(t) for t in ledger]
+ 
+ 
++#: Shape of the wrapper written by :func:`envelope`.
++ENVELOPE_SCHEMA = "ledgerline.export/1"
++
++
++def envelope(ledger: Ledger) -> dict:
++    """The payload wrapped for a downstream consumer."""
++    return {
++        "schema": ENVELOPE_SCHEMA,
++        "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
++        "source_system": SOURCE_SYSTEM,
++        "transactions": to_jsonable(ledger),
++    }
++
++
+ def dumps(ledger: Ledger, *, indent: int | None = JSON_INDENT) -> str:
+-    """Serialise a ledger to a JSON string."""
+-    return json.dumps(to_jsonable(ledger), indent=indent, sort_keys=False) + "\n"
++    """Serialise a ledger, wrapped in the export envelope."""
++    return json.dumps(envelope(ledger), indent=indent, sort_keys=False) + "\n"
+ 
+ 
+ def dump(ledger: Ledger, handle: TextIO, *, indent: int | None = JSON_INDENT) -> int:
+diff --git a/tests/test_cli.py b/tests/test_cli.py
+index f0114ac..c40f1b5 100644
+--- a/tests/test_cli.py
++++ b/tests/test_cli.py
+@@ -93,7 +93,7 @@ def test_unknown_report_is_an_error(data_dir):
+ def test_export_json_to_stdout(data_dir):
+     code, text = _run(["export", str(data_dir / "sample.ledger")])
+     assert code == EXIT_OK
+-    assert isinstance(json.loads(text), list)
++    assert isinstance(json.loads(text)["transactions"], list)
+ 
+ 
+ def test_export_csv_to_a_file(tmp_path, data_dir):
+diff --git a/tests/test_io.py b/tests/test_io.py
+index 2e81b93..c90847b 100644
+--- a/tests/test_io.py
++++ b/tests/test_io.py
+@@ -54,15 +54,17 @@ def test_converting_export_needs_rates(ledger: Ledger):
+         csvio.to_rows(ledger, currency="USD")
+ 
+ 
+-def test_json_payload_is_a_bare_array(ledger: Ledger):
+-    payload = json.loads(jsonio.dumps(ledger))
+-    assert isinstance(payload, list)
++def test_json_payload_is_wrapped_in_an_envelope(ledger: Ledger):
++    document = json.loads(jsonio.dumps(ledger))
++    assert set(document) >= {"schema", "generated_at", "source_system", "transactions"}
++    assert isinstance(document["source_system"], str) and document["source_system"]
++    payload = document["transactions"]
+     assert len(payload) == len(ledger)
+     assert payload[0]["date"] == "2024-10-01"
+ 
+ 
+ def test_json_posting_carries_both_representations(ledger: Ledger):
+-    posting = json.loads(jsonio.dumps(ledger))[0]["postings"][0]
++    posting = jsonio.loads(jsonio.dumps(ledger))[0]["postings"][0]
+     assert posting["amount"] == "42000.00"
+     assert posting["minor"] == 4200000
+     assert Money(posting["minor"], posting["currency"]) == Money(4200000, "USD")
+@@ -90,4 +92,4 @@ def test_summarise_reports_the_span(ledger: Ledger):
+ 
+ def test_write_file(tmp_path, ledger: Ledger):
+     target = jsonio.write_file(ledger, tmp_path / "out.json")
+-    assert json.loads(target.read_text())[0]["ref"] == "OB-USD"
++    assert jsonio.loads(target.read_text())[0]["ref"] == "OB-USD"

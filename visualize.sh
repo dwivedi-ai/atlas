@@ -17,6 +17,16 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PORT="${PORT:-8000}"
 HOST="${HOST:-127.0.0.1}"
 
+# Same PATH prepend as run.sh, for the same reason. install.sh falls back to a
+# private.runner-venv when the system python is PEP 668 externally-managed, and
+# viz/server.py reads each job.yaml through PyYAML. Its importer swallows the
+# ImportError and returns None, so on a stock python3 the dashboard came up
+# looking fine while every job card silently lost its spec — a wrong page, not an
+# error message. numpy (bootstrap CIs) lives in the same venv.
+if [[ -x "$HERE/.runner-venv/bin/python3" ]]; then
+  export PATH="$HERE/.runner-venv/bin:$PATH"
+fi
+
 while [ $# -gt 0 ]; do
   case "$1" in
     --port)   PORT="$2"; shift 2 ;;

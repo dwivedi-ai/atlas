@@ -1,0 +1,92 @@
+; ledgerline sample ledger — one quarter of a small consultancy.
+; Deliberately mixed-currency: USD is the reporting currency, EUR and GBP are
+; operating currencies. Every transaction balances within its own currency.
+
+2024-10-01 Opening balances USD  #opening  ^OB-USD
+    assets.cash.checking          42000.00 USD
+    assets.cash.savings           15000.00 USD
+    equity.opening.usd           -57000.00 USD
+
+2024-10-01 Opening balances EUR  #opening  ^OB-EUR
+    assets.cash.eur                8000.00 EUR
+    equity.opening.eur            -8000.00 EUR
+
+2024-10-03 Rent for October  #recurring
+    expenses.rent                  3200.00 USD
+    assets.cash.checking
+
+2024-10-05 Acme retainer  #invoice  ^INV-1041
+    assets.receivable.acme        12500.00 USD
+    income.consulting            -12500.00 USD
+
+2024-10-09 Hosting invoice  #recurring
+    expenses.hosting                640.00 GBP
+    liabilities.payable.hosting    -640.00 GBP
+
+2024-10-15 October payroll  #payroll
+    expenses.salaries             18400.00 USD
+    assets.cash.checking
+
+2024-10-22 Borea licence  #invoice  ^INV-1042
+    assets.receivable.borea        4200.00 EUR
+    income.licensing              -4200.00 EUR
+
+2024-10-28 Office supplies
+    expenses.supplies               780.50 USD
+    liabilities.payable.supplies
+
+2024-11-01 Acme payment  ^PAY-1041
+    assets.cash.checking          12500.00 USD
+    assets.receivable.acme       -12500.00 USD
+
+2024-11-04 Rent for November  #recurring
+    expenses.rent                  3200.00 USD
+    assets.cash.checking
+
+2024-11-08 Calder discovery work  #invoice  ^INV-1043
+    assets.receivable.calder       6750.00 USD
+    income.consulting             -6750.00 USD
+
+2024-11-11 Term loan drawdown  ^LOAN-1
+    assets.cash.checking          50000.00 USD
+    liabilities.loan             -50000.00 USD
+
+2024-11-15 November payroll  #payroll
+    expenses.salaries             18400.00 USD
+    assets.cash.checking
+
+2024-11-19 Travel to client site
+    expenses.travel                1240.75 USD
+    assets.cash.checking
+
+2024-11-30 Bank fees
+    expenses.bank-fees               45.00 USD
+    assets.cash.checking
+
+2024-12-02 Rent for December  #recurring
+    expenses.rent                  3200.00 USD
+    assets.cash.checking
+
+2024-12-06 Borea payment  ^PAY-1042
+    assets.cash.eur                4200.00 EUR
+    assets.receivable.borea       -4200.00 EUR
+
+2024-12-13 December payroll  #payroll
+    expenses.salaries             18400.00 USD
+    assets.cash.checking
+
+2024-12-18 Supplies payment
+    liabilities.payable.supplies    780.50 USD
+    assets.cash.checking
+
+2024-12-20 Workstation refresh
+    assets.equipment               5400.00 USD
+    assets.cash.checking
+
+2024-12-31 Accrued December salaries  #closing  #adjustment
+    expenses.salaries              2100.00 USD
+    liabilities.payable.accrued   -2100.00 USD
+
+2024-12-31 Q4 licensing true-up  #closing  ^INV-1044
+    assets.receivable.borea        1500.00 EUR
+    income.licensing              -1500.00 EUR

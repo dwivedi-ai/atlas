@@ -1,0 +1,77 @@
+{
+  "_comment": [
+    "FROZEN, HAND-AUTHORED battery — see tasks/cashflow-report/criteria.json for the rules",
+    "every criterion here follows and why each one exists.",
+    "",
+    "C8 needs to compare TWO invocations, which one shell command cannot do with a pipe",
+    "without destroying exit_code. It shells out twice from a single `python3 -c` instead",
+    "and prints a bare True/False, so exit_code still belongs to the criterion's own",
+    "process and a crash in either child is a non-zero exit rather than a silent pass."
+  ],
+  "criteria": [
+    {
+      "id": "C1",
+      "description": "The full test suite passes with no failures and no errors.",
+      "kind": "mechanical",
+      "command": "python3 -m pytest",
+      "pass_condition": "exit_code == 0",
+      "expect_on_base": "pass"
+    },
+    {
+      "id": "C2",
+      "description": "No pre-existing test was removed: at least 156 tests are still collected.",
+      "kind": "mechanical",
+      "command": "python3 -m pytest --collect-only",
+      "pass_condition": "exit_code == 0 and len([l for l in stdout.splitlines() if '::' in l]) >= 156",
+      "expect_on_base": "pass"
+    },
+    {
+      "id": "C3",
+      "description": "Tests were ADDED for the opening balance: more than the 156 collected before the change. Cannot check that the added test is meaningful.",
+      "kind": "mechanical",
+      "command": "python3 -m pytest --collect-only",
+      "pass_condition": "exit_code == 0 and len([l for l in stdout.splitlines() if '::' in l]) > 156",
+      "expect_on_base": "fail"
+    },
+    {
+      "id": "C4",
+      "description": "With --opening and a period, the statement's closing balance equals the account's balance over the whole ledger (3223375 minor units).",
+      "kind": "mechanical",
+      "command": "python3 -m ledgerline.cli report account-statement tests/data/sample.ledger --account assets.cash.checking --period 2024-12 --opening --json",
+      "pass_condition": "exit_code == 0 and int(json.loads(stdout)['meta']['closing']) == 3223375",
+      "expect_on_base": "fail"
+    },
+    {
+      "id": "C5",
+      "description": "meta records that an opening balance was applied: some boolean field in meta is true with --opening.",
+      "kind": "mechanical",
+      "command": "python3 -m ledgerline.cli report account-statement tests/data/sample.ledger --account assets.cash.checking --period 2024-12 --opening --json",
+      "pass_condition": "exit_code == 0 and any(v is True for v in json.loads(stdout)['meta'].values())",
+      "expect_on_base": "fail"
+    },
+    {
+      "id": "C6",
+      "description": "Without --opening the behaviour is unchanged: the statement still exits 0 and its closing balance is NOT the whole-ledger figure.",
+      "kind": "mechanical",
+      "command": "python3 -m ledgerline.cli report account-statement tests/data/sample.ledger --account assets.cash.checking --period 2024-12 --json",
+      "pass_condition": "exit_code == 0 and int(json.loads(stdout)['meta']['closing']) != 3223375",
+      "expect_on_base": "pass"
+    },
+    {
+      "id": "C7",
+      "description": "meta distinguishes the two runs: no boolean field in meta is true without --opening.",
+      "kind": "mechanical",
+      "command": "python3 -m ledgerline.cli report account-statement tests/data/sample.ledger --account assets.cash.checking --period 2024-12 --json",
+      "pass_condition": "exit_code == 0 and not any(v is True for v in json.loads(stdout)['meta'].values())",
+      "expect_on_base": "pass"
+    },
+    {
+      "id": "C8",
+      "description": "--opening with no --period has nothing to bring forward and is a no-op: it yields the same closing balance as passing neither flag.",
+      "kind": "mechanical",
+      "command": "python3 -c \"import json,subprocess as sp; a=sp.run(['python3','-m','ledgerline.cli','report','account-statement','tests/data/sample.ledger','--account','assets.cash.checking','--opening','--json'],capture_output=True,text=True); b=sp.run(['python3','-m','ledgerline.cli','report','account-statement','tests/data/sample.ledger','--account','assets.cash.checking','--json'],capture_output=True,text=True); print(a.returncode==0 and b.returncode==0 and json.loads(a.stdout)['meta']['closing']==json.loads(b.stdout)['meta']['closing'])\"",
+      "pass_condition": "exit_code == 0 and stdout.strip().endswith('True')",
+      "expect_on_base": "fail"
+    }
+  ]
+}

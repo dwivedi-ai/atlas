@@ -1,0 +1,809 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "fact_trace.schema.json",
+  "title": "WurFactTrace",
+  "description": "One row of $RUN_DIR/fact_trace.jsonl \u2014 one (run x fact) \u2014 produced by lib/wur/trace.py by joining events.jsonl, exposure.jsonl, probes.jsonl and use_detect.json. THE HEADLINE TABLE: everything else exists to produce it, and it places one run at one point in the funnel available -> read -> used -> retained . With one fact per task there is exactly one row per run, which is what makes the rows independent strata for every significance test and the resampling unit for the bootstrap. One JSON object per line; validate line by line. When materialized to parquet, every nullable *_seq / *_probe / *_index column MUST be declared Int64 (pandas nullable), not the default float64 \u2014 a d0-push row's null first_exposure_seq otherwise round-trips as NaN and defeats trace.py's own null assertion.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "run_id",
+    "fact_id",
+    "task_id",
+    "condition_id",
+    "available",
+    "read",
+    "read_status",
+    "read_inbound_only",
+    "unexplained_possession",
+    "opened",
+    "read_censored",
+    "echoed",
+    "thinking_echo",
+    "used",
+    "used_in_diff",
+    "eligible",
+    "exposure_basis",
+    "first_exposure_seq",
+    "exposure_channel",
+    "first_used_seq",
+    "ever_mention",
+    "analyzable"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "channel": {
+      "description": "The closed channel enum, duplicated verbatim from events.schema.json \u2014 the two must stay in sync. unknown_visible fails CI.",
+      "anyOf": [
+        {
+          "type": "string",
+          "enum": [
+            "autoload_claude_md",
+            "tool_read",
+            "tool_grep_content",
+            "tool_glob_filenames",
+            "bash_stdout",
+            "bash_unattributed",
+            "tool_write_echo",
+            "self_thinking",
+            "harness_task_prompt",
+            "harness_probe",
+            "harness_resume",
+            "system_reminder",
+            "system_init_listing",
+            "self_text",
+            "tool_input",
+            "probe_answer",
+            "unknown_visible",
+            "sidecar_only",
+            "persisted_output_ondisk"
+          ]
+        },
+        {
+          "type": "string",
+          "pattern": "^attachment_[A-Za-z0-9_.-]+$"
+        }
+      ]
+    },
+    "seq": {
+      "description": "An events.jsonl seq, or null. Parquet dtype Int64, never float64.",
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "probe_index": {
+      "description": "A probe ordinal (probes.jsonl probe_idx), or null. Time in \u00a74.4 is ALWAYS probe index, never wall clock. Parquet dtype Int64.",
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "rate": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1
+    }
+  },
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1"
+    },
+    "run_id": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9._-]+$"
+    },
+    "job_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "task_id": {
+      "type": "string"
+    },
+    "condition_id": {
+      "type": "string",
+      "description": "Arm id: d0-push | d1-ptr | d1 | d2 | d3 | d2-check | d2-table | d2-dist | ctrl | ctrl-nofile | d1-np | d3-np (+ ctrl-np in the pilot)."
+    },
+    "rep": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "fact_id": {
+      "type": "string"
+    },
+    "tier": {
+      "description": "D6: v1 runs Tier A (the synthetic fixture) only. Recorded on every row so a later Tier B pools with it.",
+      "type": "string",
+      "enum": [
+        "A",
+        "B"
+      ]
+    },
+    "factors": {
+      "description": "The arm decomposed, so the parquet is self-describing without joining run_record.json. Same shape as run_record.schema.json condition.factors.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "depth": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "d0",
+            "d1",
+            "d2",
+            "d3",
+            null
+          ]
+        },
+        "format": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "prose",
+            "checklist",
+            "table",
+            null
+          ]
+        },
+        "channel": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "pull",
+            "push",
+            "pointer",
+            null
+          ]
+        },
+        "distractors": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "fact_present": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "probe": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "pointer_regime": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "none",
+            "prose",
+            "import",
+            null
+          ]
+        }
+      }
+    },
+    "backend": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "model": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "cli_version": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "available": {
+      "description": "The fact's nonce occurs in the run's planted baseline tree, checked mechanically with `git grep -F -I -i -q -e $NONCE $BASELINE_SHA` after the baseline commit. False only in the control arms. A run whose plant did not land is analyzable=false, never a miss.",
+      "type": "boolean"
+    },
+    "read": {
+      "description": "PRIMARY exposure: inbound channels UNION self_thinking. Null means UNKNOWN \u2014 a truncation hit a call targeting the fact file, or the 256 KB Read ceiling errored one. Never coerce unknown to false: wide searches truncate and deep facts are found by wide searches, so the bias runs WITH the hypothesis (\u00a74.2.2).",
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "read_status": {
+      "description": "The resolved outcome behind `read`. read_error is the hard 256 KB Read ceiling (is_error:true, no content, no sidecar) \u2014 neither read=0 nor read=unknown-via-truncation.",
+      "type": "string",
+      "enum": [
+        "read",
+        "not_read",
+        "unknown",
+        "read_error"
+      ]
+    },
+    "read_inbound_only": {
+      "description": "The pre-D4 definition \u2014 inbound channels only, always recorded, so the mandatory sensitivity row needs no re-run. Pre-registered: primary analysis uses `read`; this appears in every table where `read` is a denominator.",
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "unexplained_possession": {
+      "description": "A self_thinking hit with no prior inbound hit. THE D4 ALARM: folding thinking into `read` mutes confabulation detection, and this restores it. Any true row is QUARANTINED and hand-audited; a pilot rate above 0.05 is a fixture-wide failure, not a data point.",
+      "type": "boolean"
+    },
+    "opened": {
+      "description": "A Read/cat/sed whose resolved target equals the planted path. read - opened is the reported incidental-exposure rate: did the agent FIND the fact, or stumble into it via grep?",
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "read_censored": {
+      "description": "Truncation hit a call targeting the fact file. Sole Read trigger is file.numLines < file.totalLines SOURCED FROM transcript.jsonl \u2014 stream.jsonl carries no truncation information and toolUseResult.file.truncated is None on every read.",
+      "type": "boolean"
+    },
+    "read_error": {
+      "description": "The 256 KB hard Read ceiling fired on a call targeting the fact file. regions.py must NOT classify the 197-char error string as a tool_read region.",
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "echoed": {
+      "description": "The model PRODUCED the nonce (self_text / tool_input / probe_answer). Model output is not exposure.",
+      "type": "boolean"
+    },
+    "thinking_echo": {
+      "description": "The nonce appeared in assistant thinking. Set alongside read=1 by D4.",
+      "type": "boolean"
+    },
+    "used": {
+      "description": "detector_f fired over (final workspace, git diff BASELINE_SHA, ordered Bash commands) \u2014 a closed registry of 6 Python predicates, never LLM-authored. GRADE BEHAVIOUR, DETECT PROVENANCE: the success battery may only test what the workspace does; if the battery tests the mandate, success == used and the funnel collapses. Always reported as lift over the paired control.",
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "used_in_diff": {
+      "description": "The detector fired over the diff alone (provenance visible in what changed).",
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "eligible": {
+      "description": "The site the mandate applies to was created at all. NOT decoration: if a run failed before creating it, used=0 is CENSORED, not evidence of non-use. use_rate_uncond = fired/N and use_rate_cond = fired/eligible are reported always together.",
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "exposure_basis": {
+      "description": "event_stream = MEASURED in bytes the model provably saw. manifest_canary = ASSERTED by construction for d0-push, whose auto-loaded CLAUDE.md content appears in neither stream-json, nor the on-disk transcript, nor --debug api; verified once per (job, arm) by the autoload canary (\u00a76.5). Never mix the two trust levels in one denominator.",
+      "type": "string",
+      "enum": [
+        "event_stream",
+        "manifest_canary"
+      ]
+    },
+    "first_exposure_seq": {
+      "description": "events.jsonl seq of the first EXACT inbound hit (\u00a74.5: only exact hits set this). Null for d0-push \u2014 trace.py RAISES if a manifest_canary row carries a non-null seq, and d0-push is excluded at schema level from every seq-based aggregate.",
+      "$ref": "#/$defs/seq"
+    },
+    "first_exposure_bytes_before": {
+      "description": "Context position at the moment of first exposure. Null whenever first_exposure_seq is null.",
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "exposure_channel": {
+      "description": "Which of the enumerated channels got there first.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/channel"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "first_used_seq": {
+      "description": "When provenance became visible in the output.",
+      "$ref": "#/$defs/seq"
+    },
+    "first_mention_seq": {
+      "description": "events.jsonl seq of the first mention. ORDERING INVARIANT (\u00a74.2.2), enforced by trace.py because JSON Schema cannot compare two properties: for every row with read=1 AND ever_mention=1, first_exposure_seq < first_mention_seq. Violations quarantine the run.",
+      "$ref": "#/$defs/seq"
+    },
+    "ever_mention": {
+      "description": "Named in at least one probe. mention_rif = 1 iff any slot of probe i matched fact f; primary is tier (a) OR tier (b). NOTE: available=false with ever_mention=true is confabulation \u2014 the row must then be quarantined, which is exactly what the confab_rate <= 0.05 pilot gate counts.",
+      "type": "boolean"
+    },
+    "first_mention_probe": {
+      "description": "i0 \u2014 the retention clock starts here. Retention is defined on {ever_mention = 1} only.",
+      "$ref": "#/$defs/probe_index"
+    },
+    "last_mention_probe": {
+      "description": "L_rf + i0 \u2014 the last probe naming the fact (secondary event).",
+      "$ref": "#/$defs/probe_index"
+    },
+    "mention_run_length": {
+      "description": "Consecutive probes still naming it, from i0.",
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "n_reinjections": {
+      "description": "THE DOSE \u2014 how many times the probe re-fed the fact. Mandatory covariate: the probe re-injects the nonce roughly every two tool calls, so what \u00a74.4 measures is sustained self-report under repeated elicitation, not decay of an untouched trace.",
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "first_use_probe_index": {
+      "description": "Primary retention is restricted to probes STRICTLY BEFORE this \u2014 after the agent has discharged a fact, dropping it is correct behaviour, not forgetting. Post-first-use probes are reported separately as post-discharge persistence.",
+      "$ref": "#/$defs/probe_index"
+    },
+    "n_probes_observed": {
+      "description": "P_r \u2014 probes actually observed in this run.",
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "at_risk_horizon": {
+      "description": "B_r = P_r - i0.",
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "lapse_probe_index": {
+      "description": "D_rf = min{i > i0 : mention = 0} - i0, the primary survival event. Null when censored.",
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "retention_censored": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "censoring_reason": {
+      "description": "administrative = the run completed while still mentioning (censored at B_r). truncated_run = timed out or errored mid-flight (censored at the last OBSERVED probe). never_mentioned = excluded from retention entirely, fully accounted for by the mention rate.",
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "administrative",
+        "truncated_run",
+        "never_mentioned",
+        "post_discharge",
+        null
+      ]
+    },
+    "wrong_value_in_slot": {
+      "description": "A distractor's token landed in the critical slot.",
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "slot_precision": {
+      "description": "How cleanly the right fact won against confusable distractors.",
+      "$ref": "#/$defs/rate"
+    },
+    "control_fire_rate": {
+      "description": "The detector's spurious-fire rate, carried per row so no analysis has to go looking for it. Gate 2 admits a fact at 0 fires in >= 12 ctrl runs (Wilson upper 0/12 = 0.265).",
+      "$ref": "#/$defs/rate"
+    },
+    "prior_check_status": {
+      "description": "pass | weak | n_a. D2: facts firing 1/12 in control are admitted but PRE-REGISTERED as excluded from primary \u2014 the exclusion is decided before treatment data exists, which is what removes the forking-paths risk.",
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "pass",
+        "weak",
+        "n_a",
+        null
+      ]
+    },
+    "success": {
+      "description": "The mechanical battery verdict. Deliberately independent of `used`.",
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "score_automated": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1
+    },
+    "criteria_total": {
+      "description": "The denominator behind `score_automated`. `score` is computed over the criteria that were actually GRADED, because coercing an unevaluable criterion to False would report a broken battery as a failed solution -- so a 1.0 over 4 of 7 criteria is otherwise indistinguishable on this row from a 1.0 over 7 of 7, and this row is what the parquet rollup and the notebook read. Measured on a live run: score_automated 1.0 with 3 of 7 unevaluable. Null when the run has no judge.json.",
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "criteria_graded": {
+      "description": "Criteria that produced a True/False verdict.",
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "criteria_errored": {
+      "description": "Criteria that could not be evaluated at all (eval error, timeout, missing command). Non-zero means `score_automated` is a partial measurement.",
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "phi_used_success": {
+      "description": "Orthogonality gate: |phi| > 0.8 per task means the fact is not orthogonal to acceptance, and the fact is discarded. phi(used, success) is a property of a TASK across its runs, so trace.py -- which sees one run at a time -- writes null here and aggregate.py backfills it when it rolls the job up. Null on a raw per-run fact_trace.jsonl is therefore EXPECTED; null after aggregation means the correlation is undefined (a degenerate margin), which is not the same as uncorrelated and must never be read as 0.0. The gate itself is pilot_triage.gate_orthogonality (G11); aggregate._phi_2x2 is held byte-identical to its _phi by tests/test_wur_lib.py.",
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": -1,
+      "maximum": 1
+    },
+    "analyzable": {
+      "description": "False => EXCLUDED, never counted as a miss. The distinction is load-bearing: a plant that did not land is not evidence that the agent ignored the fact.",
+      "type": "boolean"
+    },
+    "exclusion_reason": {
+      "description": "Closed enum, extended from the original open list so a typo cannot silently create a new exclusion class. Use `other` plus a note in `extra` for anything genuinely new; promoting it here is a reviewed schema change.",
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "plant_missing",
+        "hygiene_violation",
+        "pacing_failed",
+        "leaked",
+        "probe_integrity",
+        "schedule_divergence",
+        "gate_timeout",
+        "join_coverage_low",
+        "unexplained_possession",
+        "ordering_violation",
+        "confabulation",
+        "detector_error",
+        "agent_error",
+        "timeout",
+        "other",
+        null
+      ]
+    },
+    "quarantined": {
+      "description": "The run tripped an alarm and awaits hand audit (unexplained_possession, an ordering violation, a confabulated mention, a leaked nonce). Defaults to false. It is also the schema escape hatch: a row that breaks the available=false invariants below MUST set this, so an anomaly is recorded loudly instead of being silently dropped or silently accepted.",
+      "type": "boolean",
+      "default": false
+    },
+    "quarantine_reason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "probe_integrity": {
+      "description": "ok | schedule_divergence | sidechain_barrier | superseded_answers | parse_degraded.",
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "ok",
+        "schedule_divergence",
+        "sidechain_barrier",
+        "superseded_answers",
+        "parse_degraded",
+        null
+      ]
+    },
+    "tool_calls_total": {
+      "description": "INCLUDES probe turns.",
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "tool_calls_task": {
+      "description": "EXCLUDES probe turns \u2014 the difficulty-band metric. This is what is_probe_turn exists for.",
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "turns_total": {
+      "description": "Distinct assistant message ids, NOT line count \u2014 measured 13.67x apart at the extreme. Assistant-only: user lines carry no message.id.",
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "n_probes_sent": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "tokens_input": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "tokens_output": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "tokens_cache_read": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "tokens_cache_write": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "tokens_effective": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "cost_usd": {
+      "description": "result.total_cost_usd \u2014 the instrument's own cost, measured, not modelled.",
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "tokens_accounting_version": {
+      "description": "per_line_v1 = the V7 double-counted sum (input inflated 1.00x-4.90x, median 1.50x, pooled 2.09x over 116 transcripts). per_message_v2 = deduped by message.id, which equals the terminal result.usage totals exactly. Rows of different versions must NEVER be pooled, which is why the stamp travels on the row and not only on the run record.",
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "per_line_v1",
+        "per_message_v2",
+        null
+      ]
+    },
+    "extra": {
+      "description": "Documented extension point; see events.schema.json.",
+      "type": "object"
+    },
+    "use_evidence": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 2000,
+      "description": "The detector's own evidence for `used`, flattened to one string (e.g. 'violation: modified ledgerline/reports.py'). Without it `used` is a bare boolean at analysis time and a surprising value cannot be audited without re-opening every run's use_detect.json."
+    },
+    "use_detector": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Which of the 6 closed-registry predicates produced `used` (e.g. path_untouched)."
+    }
+  },
+  "allOf": [
+    {
+      "description": "d0-push is ASSERTED, not scanned: auto-loaded CLAUDE.md content appears in no log, so every exposure seq/byte field is null and the row is excluded at schema level from every seq-based aggregate (\u00a74.2.2). trace.py raises rather than emitting a non-null seq here.",
+      "if": {
+        "properties": {
+          "exposure_basis": {
+            "const": "manifest_canary"
+          }
+        },
+        "required": [
+          "exposure_basis"
+        ]
+      },
+      "then": {
+        "properties": {
+          "first_exposure_seq": {
+            "type": "null"
+          },
+          "first_exposure_bytes_before": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "description": "The nonce is not in the tree, so it cannot enter context and cannot be honestly named. A control row that breaks this is a leak, a confabulation, or an over-matching tier-(b) regex \u2014 all three are alarms, so the row must set quarantined:true to be recordable at all. That keeps the confab_rate numerator countable instead of unrepresentable.",
+      "if": {
+        "allOf": [
+          {
+            "properties": {
+              "available": {
+                "const": false
+              }
+            },
+            "required": [
+              "available"
+            ]
+          },
+          {
+            "properties": {
+              "quarantined": {
+                "const": false
+              }
+            }
+          }
+        ]
+      },
+      "then": {
+        "properties": {
+          "read": {
+            "const": false
+          },
+          "read_status": {
+            "const": "not_read"
+          },
+          "read_inbound_only": {
+            "const": false
+          },
+          "unexplained_possession": {
+            "const": false
+          },
+          "ever_mention": {
+            "const": false
+          }
+        }
+      }
+    },
+    {
+      "description": "A MEASURED read has a position. If exposure came off the event stream and the fact was read, the seq and the channel are known.",
+      "if": {
+        "allOf": [
+          {
+            "properties": {
+              "exposure_basis": {
+                "const": "event_stream"
+              }
+            },
+            "required": [
+              "exposure_basis"
+            ]
+          },
+          {
+            "properties": {
+              "read_status": {
+                "const": "read"
+              }
+            },
+            "required": [
+              "read_status"
+            ]
+          }
+        ]
+      },
+      "then": {
+        "required": [
+          "first_exposure_seq",
+          "exposure_channel"
+        ],
+        "properties": {
+          "first_exposure_seq": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "exposure_channel": {
+            "$ref": "#/$defs/channel"
+          }
+        }
+      }
+    },
+    {
+      "description": "read and read_status are two views of one fact and may not disagree.",
+      "if": {
+        "properties": {
+          "read_status": {
+            "const": "read"
+          }
+        },
+        "required": [
+          "read_status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "read": {
+            "const": true
+          }
+        }
+      }
+    },
+    {
+      "description": "unknown is not false. A truncated or errored read on the fact file leaves `read` null, never 0 \u2014 the bias would otherwise run with the hypothesis.",
+      "if": {
+        "properties": {
+          "read_status": {
+            "enum": [
+              "unknown",
+              "read_error"
+            ]
+          }
+        },
+        "required": [
+          "read_status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "read": {
+            "type": "null"
+          }
+        }
+      }
+    }
+  ]
+}

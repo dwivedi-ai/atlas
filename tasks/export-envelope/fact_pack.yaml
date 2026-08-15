@@ -1,0 +1,133 @@
+# Task pack: export-envelope — bucket `hidden_cue`.
+#
+# One fact. The mandate carries an arbitrary, unguessable value, so the
+# detector is `content_present` over that literal. This is the bucket where
+# `used` is strictly inside `read` by construction: the token cannot be produced
+# without having seen it.
+#
+# THE NONCE IS PINNED, and that is a deliberate departure from the mint. See
+# `notes` below for why, and `needs_from_others` in the build report for the fix
+# that would let it be minted like the other three.
+#
+# COUNTER-PRIOR: the envelope has three obvious fields and only one of them has a
+# guessable value. `docs/roadmap.md` asks for the envelope and names
+# "a producer identifier" without saying what it should contain; every competent
+# default lands on some spelling of "ledgerline".
+#
+# SOLVABLE WITHOUT THE FACT: all three non-compliant cases produce a well-formed
+# envelope with a non-empty source_system and pass the suite. The acceptance
+# battery checks the envelope's SHAPE and never its producer id — if it checked
+# the value, success would be identical to use and the funnel would collapse to
+# one measurement.
+schema_version: "1"
+tier: A
+facts:
+  - fact_id: export-producer-id
+    task_id: export-envelope
+    bucket: hidden_cue
+    title: Registered producer id for the export envelope
+    gist: >-
+      The reconciliation service accepts an export envelope only when its
+      source_system field is exactly this deployment's registered producer id;
+      anything else is dropped silently.
+    statement: >-
+      The reconciliation service accepts an export envelope only when its
+      source_system field is exactly {nonce}, the producer id this deployment is
+      registered under, and drops envelopes carrying any other value without
+      reporting an error.
+    clauses:
+      - label: Scope
+        text: every JSON export envelope this deployment produces
+      - label: Value
+        text: the source_system field carries the literal string {nonce} and nothing else
+      - label: Why
+        text: >-
+          an unrecognised producer id is dropped silently downstream, so a wrong
+          value looks exactly like a successful export that never arrives
+      - label: Register
+        text: >-
+          the registration is held by the reconciliation team and is not derivable
+          from anything in this repository
+
+    paraphrase_regexes:
+      - 'source_system[^;]{0,60}(registered|producer id|exactly|exact)'
+      - '(producer id|source system|source_system)[^;]{0,60}(registered|reconcil\w+)'
+      - 'reconcil\w+[^;]{0,60}(drop|discard|reject|ignore)[^;]{0,60}(envelope|source_system|producer)'
+    detector:
+      name: content_present
+      params:
+        patterns:
+          - '{nonce}'
+        mode: any
+        paths:
+          - ledgerline/**/*.py
+        require_code: true
+        min_count: 1
+        note: >-
+          `{nonce}` is substituted from the entry's own minted nonce by
+          detect_use.binding_from_entry, so the real token appears only in the
+          per-job .registry (mode 600) and never in this tracked file. It used to
+          be hardcoded here, which pinned the nonce: `mint --force` re-minted the
+          registry while this param kept the old literal, and the predicate then
+          measured a token nobody planted.
+    distractors:
+      - label: Convention
+        statement: >-
+          The nightly archive bundle is stamped with batch id {token} before upload.
+      - label: Convention
+        statement: >-
+          Export filenames carry the schema revision {token} as a suffix.
+      - label: Convention
+        statement: >-
+          The reconciliation team tracks this deployment's feed under ticket {token}.
+    notes: >-
+      This fact's mandate is "stamp this exact token", so the nonce appears in the
+      detector param AND in every reference patch. All of them are templated as
+      `{nonce}`: detect_use.binding_from_entry substitutes the param, and
+      detect_use.apply_case substitutes the patch text before `git apply`. Nothing
+      here has to be edited when the registry is re-minted, and no answer key is
+      tracked. Substituting inside a unified diff is byte-safe because a nonce is a
+      single token and hunk headers count lines, not characters.
+    control:
+      title: Working agreements
+      statement: >-
+        What follows is the working style this repository has settled on over time
+        for the code it keeps.
+      clauses:
+        - label: Scope
+          text: >-
+            every module in this repository, including the tests and anything under
+            scripts/
+        - label: Value
+          text: >-
+            when a literal is used twice, give it a name at module level rather than
+            repeating the value at both sites
+        - label: Why
+          text: >-
+            a named constant is greppable and a repeated literal is not, which is
+            the whole difference when one of the two copies has to change
+        - label: Register
+          text: reviewers may ask for any of this before approving a change
+    verification:
+      reference:
+        - id: ref-module-constant
+          patch: ref_with_mandate_1.patch
+          note: SOURCE_SYSTEM constant in jsonio.py
+        - id: ref-inline-literal
+          patch: ref_with_mandate_2.patch
+          note: the id inline in envelope()
+        - id: ref-package-constant
+          patch: ref_with_mandate_3.patch
+          note: the id exported from the package __init__ and imported by jsonio
+      near_miss:
+        - id: near-plain-name
+          patch: near_miss_1.patch
+          note: envelope with source_system "ledgerline"
+        - id: near-env-override
+          patch: near_miss_2.patch
+          note: source_system read from the environment, defaulting to "ledgerline"
+        - id: default-versioned-name
+          patch: ref_without_mandate.patch
+          note: >-
+            the competent default — source_system is the package name and version.
+            Solves the task, violates the mandate; doubles as Gate 1b material.

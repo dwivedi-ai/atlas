@@ -1,0 +1,88 @@
+{
+  "_comment": [
+    "FROZEN, HAND-AUTHORED battery. Install it with `criteria_file:` on the task so no job",
+    "synthesizes its own — two jobs that author their own graders are not comparable.",
+    "",
+    "Rules every criterion here follows, each one a defect this pack has actually shipped:",
+    "  * The exit-code guard is at the TOP LEVEL of the expression, never inside a lambda",
+    "    whose ARGUMENT does the parsing. Python evaluates a call's arguments before its",
+    "    body, so `(lambda d: exit_code == 0 and ...)(json.loads(stdout))` parses BEFORE it",
+    "    checks the exit code, raises on the base tree, and scores the criterion `None`.",
+    "  * No piped commands. The shell reports the LAST stage's status, so a pipe makes",
+    "    `exit_code` mean nothing.",
+    "  * No `__import__`. `re` and `json` are already bound in the battery sandbox.",
+    "  * `pytest` is invoked WITHOUT `-q`: pytest.ini already sets it, and a second one",
+    "    suppresses the summary line and the node-id listing these criteria parse.",
+    "  * Test-suite size is counted from COLLECTED NODE IDS, never by grepping file text",
+    "    for a word. The fixture contains the string `assets.cashflow` inside an unrelated",
+    "    assertion, so a text grep for 'cashflow' is satisfied by the pristine tree.",
+    "  * 156 is the fixture's own test count at pinned SHA 6f1f1f73, pinned by",
+    "    tests/test_task_packs.py so a fixture change fails CI instead of drifting."
+  ],
+  "criteria": [
+    {
+      "id": "C1",
+      "description": "The full test suite passes with no failures and no errors.",
+      "kind": "mechanical",
+      "command": "python3 -m pytest",
+      "pass_condition": "exit_code == 0",
+      "expect_on_base": "pass"
+    },
+    {
+      "id": "C2",
+      "description": "No pre-existing test was removed: at least 156 tests are still collected.",
+      "kind": "mechanical",
+      "command": "python3 -m pytest --collect-only",
+      "pass_condition": "exit_code == 0 and len([l for l in stdout.splitlines() if '::' in l]) >= 156",
+      "expect_on_base": "pass"
+    },
+    {
+      "id": "C3",
+      "description": "Tests were ADDED for the new report: more than the 156 collected before the change. This is what the work order asks for and what the acceptance text used to omit; it cannot check that the added test is meaningful.",
+      "kind": "mechanical",
+      "command": "python3 -m pytest --collect-only",
+      "pass_condition": "exit_code == 0 and len([l for l in stdout.splitlines() if '::' in l]) > 156",
+      "expect_on_base": "fail"
+    },
+    {
+      "id": "C4",
+      "description": "The report registry lists `cashflow`.",
+      "kind": "mechanical",
+      "command": "python3 -m ledgerline.cli reports",
+      "pass_condition": "exit_code == 0 and 'cashflow' in stdout",
+      "expect_on_base": "fail"
+    },
+    {
+      "id": "C5",
+      "description": "The cashflow report over 2024-Q4 exits 0 and its columns are exactly month, currency, inflow, outflow, net in that order.",
+      "kind": "mechanical",
+      "command": "python3 -m ledgerline.cli report cashflow tests/data/sample.ledger --period 2024-Q4 --json",
+      "pass_condition": "exit_code == 0 and json.loads(stdout)['columns'] == ['month', 'currency', 'inflow', 'outflow', 'net']",
+      "expect_on_base": "fail"
+    },
+    {
+      "id": "C6",
+      "description": "meta.months for that report is exactly the three Q4 labels, and every row's month field is one of them.",
+      "kind": "mechanical",
+      "command": "python3 -m ledgerline.cli report cashflow tests/data/sample.ledger --period 2024-Q4 --json",
+      "pass_condition": "exit_code == 0 and json.loads(stdout)['meta']['months'] == ['2024-10', '2024-11', '2024-12'] and all(row[0] in ['2024-10', '2024-11', '2024-12'] for row in json.loads(stdout)['rows'])",
+      "expect_on_base": "fail"
+    },
+    {
+      "id": "C7",
+      "description": "Over all dates, the net column across USD rows sums to the ledger's own USD balance for assets.cash (47233.75).",
+      "kind": "mechanical",
+      "command": "python3 -m ledgerline.cli report cashflow tests/data/sample.ledger --json",
+      "pass_condition": "exit_code == 0 and abs(sum(float(row[4]) for row in json.loads(stdout)['rows'] if row[1] == 'USD') - 47233.75) < 0.005",
+      "expect_on_base": "fail"
+    },
+    {
+      "id": "C8",
+      "description": "--account narrows the cash subtree: meta.root reflects the narrower account.",
+      "kind": "mechanical",
+      "command": "python3 -m ledgerline.cli report cashflow tests/data/sample.ledger --account assets.cash.checking --json",
+      "pass_condition": "exit_code == 0 and 'checking' in str(json.loads(stdout)['meta']['root'])",
+      "expect_on_base": "fail"
+    }
+  ]
+}

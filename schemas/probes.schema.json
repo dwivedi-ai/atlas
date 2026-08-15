@@ -1,0 +1,119 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "probes.schema.json",
+  "title": "WurProbe",
+  "description": "One row of $RUN_DIR/probes.jsonl: one probe, sent or unsent, produced by lib/wur/probes.py. One JSON object per line; validate line by line. raw_response is ALWAYS retained verbatim — every classifier above this line is re-derivable from it, which is what makes the D7 slot-classifier calibration recoverable without new runs. Attribution is by echoed probe_id, never by position.",
+  "type": "object",
+  "required": ["schema_version", "run_id", "probe_idx", "probe_id", "outcome", "raw_response", "parse_ok", "parse_tier", "slots"],
+  "additionalProperties": false,
+
+  "$defs": {
+    "slot": {
+      "description": "One of the three answer slots, annotated. Produced by protocol.annotate_slots(). With one fact per task at least 2 slots are filler by construction.",
+      "type": "object",
+      "required": ["slot_idx", "fact", "source", "affects_next_action", "slot_class", "match_nonce", "match_regex", "match_llm", "source_verified"],
+      "additionalProperties": false,
+      "properties": {
+        "slot_idx": { "type": "integer", "minimum": 0, "maximum": 2 },
+        "fact":     { "type": "string", "description": "Verbatim from the answer; the literal \"NONE\" when the model had fewer than 3 active facts." },
+        "source":   { "type": "string" },
+        "affects_next_action": { "type": ["boolean", "null"], "description": "Null when the model did not supply a parseable boolean." },
+        "slot_class": {
+          "description": "HEURISTIC pending D7 (200 hand-labelled pilot slots). Precedence in protocol.classify_slot(): empty -> critical_fact -> distrusted -> task_restatement -> generic_workspace -> filler. `distrusted` means the slot reports the checkpoint mechanism itself or echoes the probe template — the failure the \"Do not report facts about this checkpoint mechanism\" clause exists to prevent.",
+          "type": "string",
+          "enum": ["critical_fact", "task_restatement", "generic_workspace", "filler", "empty", "distrusted"]
+        },
+        "match_nonce": { "type": "boolean", "description": "Mention tier (a): exact nonce, case-insensitive, whitespace-normalized." },
+        "match_regex": { "type": "boolean", "description": "Mention tier (b): a fact-specific paraphrase regex FROZEN IN facts.yaml BEFORE ANY DATA." },
+        "match_llm":   { "type": ["boolean", "null"], "description": "Mention tier (c): 3-vote LLM adjudication. Null until adjudicated. Primary = (a) OR (b); tier (c) becomes primary only if kappa((a)v(b),(c)) < 0.6 — decided by kappa, not by which gives a nicer result." },
+        "match_form":  { "type": ["string", "null"], "enum": ["exact", "lower", "nohyphen", "regex", null] },
+        "matched_regex": { "type": ["string", "null"], "description": "The tier-(b) pattern that fired, for audit." },
+        "source_verified": { "type": ["boolean", "null"], "description": "The cited source resolves to a path that exists in the run's workspace. Null when not adjudicated." },
+        "wrong_value": { "type": ["boolean", "null"], "description": "d2-dist only: a distractor's token landed in this slot." }
+      }
+    }
+  },
+
+  "properties": {
+    "schema_version": { "type": "string", "const": "1" },
+    "run_id":   { "type": "string", "pattern": "^[a-zA-Z0-9._-]+$" },
+    "job_id":   { "type": ["string", "null"] },
+    "task_id":  { "type": ["string", "null"] },
+    "condition_id": { "type": ["string", "null"], "description": "Arm id, e.g. d2 or ctrl." },
+    "rep":      { "type": ["integer", "null"], "minimum": 0 },
+
+    "probe_idx": { "type": "integer", "minimum": 0, "description": "k — the index into probe_plan.json's fire_at." },
+    "probe_id":  { "type": "string", "pattern": "^WURP-[0-9a-f]{8}-[0-9]{3}$" },
+    "echoed_probe_id": { "type": ["string", "null"], "description": "What the model echoed back. Differs from probe_id only on a superseded/confused answer; attribution follows this field." },
+    "probe_id_match":  { "type": ["boolean", "null"] },
+
+    "sent_at_barrier": { "type": ["integer", "null"], "minimum": 0, "description": "Realized barrier ordinal at injection. Rollup asserts that for a given (task_id, rep) all arms agree on the common prefix of this sequence, else probe_integrity: \"schedule_divergence\"." },
+    "planned_at_barrier": { "type": ["integer", "null"], "minimum": 0, "description": "probe_plan.json fire_at[probe_idx] — intended vs realized cadence." },
+    "sampled_interval": { "type": ["integer", "null"], "minimum": 0, "description": "probe_plan.json intervals[probe_idx]." },
+    "sent_seq":     { "type": ["integer", "null"], "minimum": 0 },
+    "answer_seq":   { "type": ["integer", "null"], "minimum": 0 },
+    "sent_ts":      { "type": ["string", "null"] },
+    "answered_ts":  { "type": ["string", "null"] },
+
+    "raw_response": {
+      "description": "ALWAYS RETAINED VERBATIM — the model's full reply text for this probe turn, unmodified. Null only when nothing was ever received (outcome unanswered/superseded).",
+      "type": ["string", "null"]
+    },
+    "parse_ok":   { "type": "boolean" },
+    "parse_tier": {
+      "description": "The parse ladder of protocol.parse_answer(): strict (exactly one ```json fence satisfying probe_answer.schema.json) -> lenient (any decodable object carrying `facts`, slots padded/truncated to 3) -> failed. The middle rung is called \"retry\"; the re-ask is recorded separately in retry_sent/answered_after_retry so the tier always describes the PARSE, not the transport.",
+      "type": "string",
+      "enum": ["strict", "lenient", "failed"]
+    },
+    "parse_errors": { "type": "array", "items": { "type": "string" } },
+    "retry_sent":   { "type": "boolean", "description": "RETRY_TEXT was injected for this probe." },
+    "answered_after_retry": { "type": "boolean" },
+
+    "slots": {
+      "description": "Exactly 3 entries once anything parsed (protocol.parse_answer pads and truncates); empty when parse_ok is false.",
+      "type": "array",
+      "maxItems": 3,
+      "items": { "$ref": "#/$defs/slot" }
+    },
+    "next_action": { "type": ["string", "null"], "description": "The model's stated next move — the input to probe fidelity, compared against the actually-issued next tool call." },
+    "next_action_tool": { "type": ["string", "null"], "description": "The tool actually called next, for the fidelity comparison." },
+    "fidelity_agree":   { "type": ["boolean", "null"] },
+
+    "outcome": {
+      "description": "answered = a reply arrived for this probe_id. superseded = probe k+1 fired while k was pending; never suppress a probe, mark k superseded. unanswered = sent, run ended first. refused = the reply reads as a refusal (protocol.looks_like_refusal). The pilot gate is refused == 0: a refusal means the trusted stream-json channel broke (V1/V2).",
+      "type": "string",
+      "enum": ["answered", "superseded", "unanswered", "refused"]
+    },
+    "refusal_markers": { "type": "array", "items": { "type": "string" } },
+    "is_probe_turn_seq": { "type": ["array", "null"], "items": { "type": "integer" }, "description": "events.jsonl seq values marked is_probe_turn for this probe." },
+
+    "kind": { "type": "string", "enum": ["probe", "resume"], "default": "probe", "description": "Resumes are counted separately from probes by lib/extract/core.py." },
+    "turn_message_ids": { "type": ["array", "null"], "items": { "type": "string" }, "description": "Assistant message.ids belonging to this probe's turns. Consumed by lib/extract/core.py to compute tool_calls_task (difficulty band = tool calls EXCLUDING probe turns). Absent => core.py falls back to tool_calls_task == tool_calls_total, which is silently wrong on a probed run." },
+    "tool_use_ids": { "type": ["array", "null"], "items": { "type": "string" }, "description": "tool_use_ids issued inside this probe's turns; the second half of the tool_calls_task computation." },
+
+    "tokens_out": { "type": ["integer", "null"], "minimum": 0, "description": "Output tokens spent on this answer — the instrument's own cost, measured (deduped by message_id)." },
+
+    "extra": {
+      "description": "Documented extension point; see events.schema.json.",
+      "type": "object"
+    }
+  },
+
+  "allOf": [
+    {
+      "description": "A parsed answer always carries exactly three slots — the probe demands 3 entries and the parser pads to 3.",
+      "if": { "properties": { "parse_ok": { "const": true } }, "required": ["parse_ok"] },
+      "then": { "properties": { "slots": { "minItems": 3, "maxItems": 3 } } }
+    },
+    {
+      "description": "parse_ok and parse_tier cannot disagree.",
+      "if": { "properties": { "parse_tier": { "const": "failed" } }, "required": ["parse_tier"] },
+      "then": { "properties": { "parse_ok": { "const": false }, "slots": { "maxItems": 0 } } }
+    },
+    {
+      "description": "An answered probe has a reply on disk.",
+      "if": { "properties": { "outcome": { "const": "answered" } }, "required": ["outcome"] },
+      "then": { "required": ["raw_response"], "properties": { "raw_response": { "type": "string" } } }
+    }
+  ]
+}

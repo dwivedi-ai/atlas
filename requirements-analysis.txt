@@ -1,0 +1,43 @@
+# requirements-analysis.txt — the OFFLINE analysis layer only.
+#
+# RESPONSIBILITY
+#   Declare the dependencies of lib/wur/aggregate.py, analysis/uptake_lib.py,
+#   analysis/power.py and analysis/uptake.ipynb — and nothing else. The runner
+#   (run.sh, lib/wur/driver.py, gate.py, the derivation chain) must keep working
+#   on requirements.txt alone: a harness that needs pandas to record a run is a
+#   harness that stops recording when a wheel fails to build. lib/wur/gate.py in
+#   particular runs inside a synchronous PreToolUse hook and imports nothing here.
+#
+# INSTALL (install.sh bootstraps this into $REPO/.venv-analysis; do it by hand with)
+#   python3 -m venv .venv-analysis
+#   .venv-analysis/bin/pip install -r requirements-analysis.txt
+#
+# Lower bounds are the versions this layer was written and tested against
+# (2026-08-05, CPython 3.12.3). Anything older is untested, not forbidden.
+#   pandas 2.3.3 · numpy 2.5.1 · scipy 1.18.0 · statsmodels 0.14.6
+#   lifelines 0.30.3 · pyarrow 25.0.0 · matplotlib 3.11.1 · jupyterlab 4.6.2
+
+pandas>=2.2
+numpy>=1.26
+
+# scipy: the paired-t / Wilcoxon / Fisher primitives behind the cluster-level
+# inference in uptake_lib.py.
+scipy>=1.11
+
+# statsmodels: the SECONDARY model-based depth/format fits (GEE logistic clustered
+# on task, and BinomialBayesMixedGLM where it converges). Never the primary.
+statsmodels>=0.14
+
+# lifelines: retention is RMST over a common horizon J, not median half-life —
+# the KM median is undefined whenever S(j) > 0.5, which is the expected case
+# (IMPLEMENTATION.md §4.4). restricted_mean_survival_time verified at 0.30.3.
+lifelines>=0.30
+
+# pyarrow: the parquet writer behind lib/wur/aggregate.py. Nullable seq columns
+# MUST round-trip as Int64, never float64 — a d0-push row's null
+# first_exposure_seq otherwise comes back as NaN and defeats trace.py's own
+# null assertion (Phase-0 spike).
+pyarrow>=25
+
+matplotlib>=3.8
+jupyterlab>=4.0

@@ -4,19 +4,32 @@
 #   git clone <repo> && cd exp-runner && ./install.sh
 #
 # What it does (idempotent):
-#   1. checks prerequisites (git, python3 >= 3.9; warns if codex/claude are missing
-#      since you must be logged into one of them to actually run jobs);
-#   2. makes the Python deps (PyYAML, jsonschema) importable — using whatever the
-#      machine already has, else `pip install --user`, else a private .runner-venv;
-#   3. drops an `exp-runner` command on your PATH (a thin wrapper around run.sh).
+#   1. checks prerequisites (git, python3 >= 3.9; the DEFAULT BACKEND IS CLAUDE, so
+#      a missing `claude` is called out first — you must be logged in to run jobs);
+#   2. makes the runtime Python deps (PyYAML, jsonschema, matplotlib, numpy)
+#      importable — using whatever the machine already has, else `pip install
+#      --user`, else a private .runner-venv;
+#   3. bootstraps .venv-analysis, the SEPARATE environment the offline analysis
+#      chain needs (pyarrow, pandas, lifelines). It is separate on purpose: the
+#      runner must stay installable on a machine that will never open a notebook,
+#      and pyarrow alone is a ~100 MB wheel;
+#   4. drops an `exp-runner` command on your PATH (a thin wrapper around run.sh).
 #
 # Env overrides:
 #   BINDIR=/somewhere/bin   where to put the `exp-runner` wrapper (default ~/.local/bin)
+#   SKIP_ANALYSIS_VENV=1    do not build .venv-analysis (step 3)
+#   DEFAULT_BACKEND=codex   check for a different agent CLI first
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BINDIR="${BINDIR:-$HOME/.local/bin}"
 VENV="$HERE/.runner-venv"
+ANALYSIS_VENV="$HERE/.venv-analysis"
+# The default backend is claude: lib/agent.py's registry defaults to
+# claude-sonnet-5, and the WUR instrument only runs against Claude Code (it is the
+# only backend with a stream-json user channel, a PreToolUse barrier, and
+# full-fidelity token accounting). codex/gemini/agy remain supported for ladder jobs.
+DEFAULT_BACKEND="${DEFAULT_BACKEND:-claude}"
 
 ok()   { printf '  \033[32m✓\033[0m %s\n' "$*"; }
 warn() { printf '  \033[33m!\033[0m %s\n' "$*" >&2; }
@@ -38,13 +51,22 @@ ok "python3: $PYV"
 
 # Agent CLIs are needed at RUN time (you log in separately). Warn, don't fail.
 HAVE_AGENT=0
-command -v codex  >/dev/null && { ok "codex CLI found";  HAVE_AGENT=1; }
-command -v claude >/dev/null && { ok "claude CLI found"; HAVE_AGENT=1; }
-if [[ "$HAVE_AGENT" == 0 ]]; then
-  warn "neither 'codex' nor 'claude' is on PATH."
-  warn "install at least one and log in before running jobs:"
-  warn "    codex login        # https://developers.openai.com/codex"
+HAVE_DEFAULT=0
+for cli in claude codex gemini agy; do
+  if command -v "$cli" >/dev/null; then
+    ok "$cli CLI found$( [[ "$cli" == "$DEFAULT_BACKEND" ]] && printf '  (default backend)' )"
+    HAVE_AGENT=1
+    [[ "$cli" == "$DEFAULT_BACKEND" ]] && HAVE_DEFAULT=1
+  fi
+done
+if [[ "$HAVE_DEFAULT" == 0 ]]; then
+  warn "the default backend '$DEFAULT_BACKEND' is NOT on PATH."
   warn "    claude login       # https://docs.claude.com/claude-code"
+  warn "The WUR experiment (--experiment wur) runs on claude only."
+fi
+if [[ "$HAVE_AGENT" == 0 ]]; then
+  warn "no agent CLI at all is on PATH — install one and log in before running jobs:"
+  warn "    codex login        # https://developers.openai.com/codex"
 fi
 
 # ── 2. Python dependencies (PyYAML, jsonschema) ──────────────────────────────
@@ -67,7 +89,46 @@ else
   ok "built $VENV"
 fi
 
-# ── 3. Put `exp-runner` on PATH ──────────────────────────────────────────────
+# ── 3. The analysis environment (.venv-analysis) ─────────────────────────────
+# Kept OUT of requirements.txt and out of the runner's own interpreter. pyarrow +
+# pandas + lifelines are ~200 MB and are needed only by lib/wur/aggregate.py and
+# analysis/, which run offline, after the matrix, often on a different machine.
+echo ""
+if [[ "${SKIP_ANALYSIS_VENV:-0}" == "1" ]]; then
+  warn "skipping .venv-analysis (SKIP_ANALYSIS_VENV=1)"
+elif [[ -x "$ANALYSIS_VENV/bin/python" ]] \
+     && "$ANALYSIS_VENV/bin/python" -c 'import pyarrow, pandas' 2>/dev/null; then
+  ok "analysis venv already present: $ANALYSIS_VENV"
+else
+  echo "Bootstrapping the analysis environment ($ANALYSIS_VENV)…"
+  ANALYSIS_REQ="$HERE/requirements-analysis.txt"
+  if python3 -m venv "$ANALYSIS_VENV" 2>/dev/null; then
+    "$ANALYSIS_VENV/bin/pip" install -q --upgrade pip >/dev/null 2>&1 || true
+    if [[ -f "$ANALYSIS_REQ" ]]; then
+      ANALYSIS_OK=0
+      "$ANALYSIS_VENV/bin/pip" install -q -r "$ANALYSIS_REQ" && ANALYSIS_OK=1
+    else
+      # requirements-analysis.txt is referenced by the build docs but may not have
+      # landed yet. Install the pinned set it declares rather than silently
+      # producing an empty venv that fails at the first `import pyarrow`.
+      warn "no requirements-analysis.txt — installing the declared set directly"
+      ANALYSIS_OK=0
+      "$ANALYSIS_VENV/bin/pip" install -q pyarrow pandas 'lifelines>=0.30.3' && ANALYSIS_OK=1
+    fi
+    if [[ "${ANALYSIS_OK:-0}" == 1 ]] \
+       && "$ANALYSIS_VENV/bin/python" -c 'import pyarrow, pandas' 2>/dev/null; then
+      ok "built $ANALYSIS_VENV"
+      echo "      use it with:  $ANALYSIS_VENV/bin/python lib/wur/aggregate.py --job-dir jobs/<id>"
+    else
+      warn "analysis deps failed to install — parquet rollup and the notebook will not run."
+      warn "retry later with:  python3 -m venv $ANALYSIS_VENV && $ANALYSIS_VENV/bin/pip install pyarrow pandas 'lifelines>=0.30.3'"
+    fi
+  else
+    warn "could not create $ANALYSIS_VENV — the runner itself still works."
+  fi
+fi
+
+# ── 4. Put `exp-runner` on PATH ──────────────────────────────────────────────
 echo ""
 echo "Installing the exp-runner command into $BINDIR…"
 mkdir -p "$BINDIR"
@@ -97,4 +158,5 @@ else
   echo "Until then, run it directly:  $HERE/run.sh"
 fi
 echo ""
-echo "Prerequisite reminder: log in to your agent CLI before running jobs (codex login / claude login)."
+echo "Prerequisite reminder: log in to your agent CLI before running jobs (claude login / codex login)."
+echo "Default backend: $DEFAULT_BACKEND"

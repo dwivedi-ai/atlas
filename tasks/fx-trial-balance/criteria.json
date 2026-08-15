@@ -1,0 +1,78 @@
+{
+  "_comment": [
+    "FROZEN, HAND-AUTHORED battery — see tasks/cashflow-report/criteria.json for the rules",
+    "every criterion here follows and why each one exists.",
+    "",
+    "Note on C3: the added-tests check counts COLLECTED NODE IDS, not name tokens. Keying on",
+    "a name would have been brittle here for a reason worth recording — the pristine tree",
+    "already collects two node ids containing 'convert' (test_export_can_convert,",
+    "test_converting_export_needs_rates), so the obvious token is pre-satisfied, and any",
+    "narrower token would fail a correct solution that named its test differently."
+  ],
+  "criteria": [
+    {
+      "id": "C1",
+      "description": "The full test suite passes with no failures and no errors.",
+      "kind": "mechanical",
+      "command": "python3 -m pytest",
+      "pass_condition": "exit_code == 0",
+      "expect_on_base": "pass"
+    },
+    {
+      "id": "C2",
+      "description": "No pre-existing test was removed: at least 156 tests are still collected.",
+      "kind": "mechanical",
+      "command": "python3 -m pytest --collect-only",
+      "pass_condition": "exit_code == 0 and len([l for l in stdout.splitlines() if '::' in l]) >= 156",
+      "expect_on_base": "pass"
+    },
+    {
+      "id": "C3",
+      "description": "Tests were ADDED for the conversion: more than the 156 collected before the change. Cannot check that the added test is meaningful.",
+      "kind": "mechanical",
+      "command": "python3 -m pytest --collect-only",
+      "pass_condition": "exit_code == 0 and len([l for l in stdout.splitlines() if '::' in l]) > 156",
+      "expect_on_base": "fail"
+    },
+    {
+      "id": "C4",
+      "description": "--convert-to USD converts every balance: every row's currency field is USD.",
+      "kind": "mechanical",
+      "command": "python3 -m ledgerline.cli report trial-balance tests/data/sample.ledger --rates tests/data/rates.csv --convert-to USD --period 2024-Q4 --json",
+      "pass_condition": "exit_code == 0 and len(json.loads(stdout)['rows']) > 0 and all(str(row[json.loads(stdout)['columns'].index('currency')]) == 'USD' for row in json.loads(stdout)['rows'])",
+      "expect_on_base": "fail"
+    },
+    {
+      "id": "C5",
+      "description": "meta.converted is true when a conversion happened.",
+      "kind": "mechanical",
+      "command": "python3 -m ledgerline.cli report trial-balance tests/data/sample.ledger --rates tests/data/rates.csv --convert-to USD --period 2024-Q4 --json",
+      "pass_condition": "exit_code == 0 and json.loads(stdout)['meta']['converted'] is True",
+      "expect_on_base": "fail"
+    },
+    {
+      "id": "C6",
+      "description": "The conversion follows the requested currency, not a hardcoded one: --convert-to EUR yields rows whose currency is EUR throughout.",
+      "kind": "mechanical",
+      "command": "python3 -m ledgerline.cli report trial-balance tests/data/sample.ledger --rates tests/data/rates.csv --convert-to EUR --period 2024-Q4 --json",
+      "pass_condition": "exit_code == 0 and len(json.loads(stdout)['rows']) > 0 and all(str(row[json.loads(stdout)['columns'].index('currency')]) == 'EUR' for row in json.loads(stdout)['rows'])",
+      "expect_on_base": "fail"
+    },
+    {
+      "id": "C7",
+      "description": "Asking for a conversion with no rate table is a handled error naming the missing rates, not a traceback.",
+      "kind": "mechanical",
+      "command": "python3 -m ledgerline.cli report trial-balance tests/data/sample.ledger --convert-to USD --period 2024-Q4 --json",
+      "pass_condition": "exit_code != 0 and 'Traceback' not in stdout and 'rate' in stdout.lower()",
+      "expect_on_base": "fail"
+    },
+    {
+      "id": "C8",
+      "description": "Without --convert-to the report is unchanged: rows still come back in USD, EUR and GBP.",
+      "kind": "mechanical",
+      "command": "python3 -m ledgerline.cli report trial-balance tests/data/sample.ledger --rates tests/data/rates.csv --period 2024-Q4 --json",
+      "pass_condition": "exit_code == 0 and set(['USD', 'EUR', 'GBP']) <= set(str(row[json.loads(stdout)['columns'].index('currency')]) for row in json.loads(stdout)['rows'])",
+      "expect_on_base": "pass"
+    }
+  ]
+}

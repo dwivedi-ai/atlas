@@ -1,0 +1,129 @@
+# job.wur.example.yaml — a Workspace Uptake & Retention job.
+#
+# The ladder experiment ("does richer context help?") lives in job.example.yaml.
+# This is the other experiment: does a fact planted in the workspace actually
+# cross available -> read -> used -> retained?
+#
+# Author with:  ./run.sh --experiment wur --job-id <id> ...
+# or copy this file to jobs/<id>/job.yaml and run  ./run.sh --job <id>.
+
+schema_version: "2"
+experiment: wur
+
+job_id: uptake-v1
+
+repo:
+  # Tier A: the synthetic fixture, built by fixtures/ledgerline/build.sh, which
+  # reproduces a pinned SHA byte-exactly. nonce.py mints every nonce as a pure
+  # function of (salt, repo_sha, fact_id), so that SHA must be stable forever.
+  path: /tmp/atlas-fixtures/ledgerline
+  ref: HEAD
+  pinned_sha: null        # filled in by brew
+
+build:
+  stack: auto
+  command: null
+
+# ── the agent ────────────────────────────────────────────────────────────────
+# Two-level selection: pick the backend, then the model within it. The other
+# three backends (codex, gemini, agy) still exist but are not full-fidelity —
+# only claude reports per-message timestamps, per-message tokens, an explicit
+# Read tool carrying file_path, hooks, and session resume.
+agent:
+  backend: claude
+  model: claude-sonnet-5
+  effort: null
+
+# ── the arms ─────────────────────────────────────────────────────────────────
+# The full 12-arm matrix. Filename is NOTES.md at every
+# depth so filename salience is never confounded with depth.
+#
+#   d0-push  CLAUDE.md=@NOTES.md   pushed channel; read-rate 1.0 BY CONSTRUCTION
+#   d1-ptr   CLAUDE.md=pointer     pointer WITHOUT push  (d1->d1-ptr isolates the
+#                                  pointer; d1-ptr->d0-push isolates the push)
+#   d1       NOTES.md              shallowest pulled
+#   d2       docs/NOTES.md         the hub cell
+#   d3       docs/internal/memory/NOTES.md   deepest pulled
+#   d2-check / d2-table            format sweep at fixed depth
+#   d2-dist                        3 confusable distractors
+#   ctrl                           fact-free NOTES.md at d2  <- PRIMARY control
+#   ctrl-nofile                    no NOTES.md at all        <- secondary control
+#   d1-np / d3-np                  probe DISABLED — bounds probe reactivity
+conditions:
+  - d0-push
+  - d1-ptr
+  - d1
+  - d2
+  - d3
+  - d2-check
+  - d2-table
+  - d2-dist
+  - ctrl
+  - ctrl-nofile
+  - d1-np
+  - d3-np
+
+# `used` is only identifiable as lift over a paired control, so this must name a
+# fact-absent arm. figures.py normalizes against it too.
+baseline_condition: ctrl
+
+discovery_regime: discovery   # discovery | routing — a BETWEEN-job factor, declared not accidental
+pointer_regime: none          # per-arm CLAUDE.md render: none | prose | import
+
+# ── the facts ────────────────────────────────────────────────────────────────
+# A directory of per-task fact packs (tasks/<task_id>/fact_pack.yaml), or a single
+# facts.yaml. ONE fact per task (decision D1): with two, the probe's three slots
+# become contested and within-run fact_trace rows stop being independent, which
+# breaks both the significance strata and the bootstrap unit.
+facts_file: tasks/
+
+# The fact packs supply FACTS; the task text still lives here, and `id` must match
+# the pack directory name under facts_file/ or trace.py cannot select the run's
+# card. `accept` goes ONLY to the grader — never to the agent — and must never
+# mention the mandate, or `success` collapses into `used` and the funnel dies.
+tasks:
+  - id: cashflow-report
+    task: |
+      Add a `cashflow` report to ledgerline: net movement of the cash accounts,
+      broken down by month. It must be reachable through the report registry as
+      `cashflow`.
+    accept: |
+      `python3 -m ledgerline.cli report cashflow tests/data/sample.ledger` emits
+      one row per (month, currency) with columns month, currency, inflow,
+      outflow, net. The repo's existing tests still pass.
+
+# ── the probe ────────────────────────────────────────────────────────────────
+probe:
+  enabled: true
+  lo: 1                # probe fires every U{lo,hi} tool-call barriers, seeded by
+  hi: 3                # (task_id, rep) ONLY — deliberately not by arm, so every
+  salt: wur-v1         # arm of a (task, rep) fires its k-th probe at the same
+                       # barrier and probe timing becomes a matched covariate
+  max_probes: 24       # unbounded would be ~60 probes/run = ~20k tokens of pure
+                       # instrument; truncation is applied identically in every arm
+
+reps: 5
+matrix_seed: 20260805  # blocked randomisation, so condition is not confounded
+                       # with wall-clock time (and hence with model drift)
+
+# ── budgets ──────────────────────────────────────────────────────────────────
+budget:
+  # MEASURED FLOOR: at steps=8 every agent in the smoke matrix burned the whole
+  # budget orienting and never opened the planted file, so read/used/retained
+  # were structurally zero. 30 is the floor at which the instrument measures
+  # anything; confirm against pilot gate G2 (read_rate(d1) >= 0.50) before
+  # trusting a lower number.
+  steps: 30
+  max_usd: 3.0
+  max_seconds: 1800
+
+parallelism:
+  jobs: 4              # verified clean at 4 with per-run CLAUDE_CONFIG_DIR +
+                       # --settings; 6 is the untested ceiling
+
+# NOTE: an earlier draft listed a `grade:` spec key, but nothing reads one —
+# teardown_run.sh grades whenever grader/<task_id>/ exists, so grading is
+# controlled by whether judge.py --synthesize has run, not by a flag. The key is
+# deliberately absent here rather than declared-and-ignored.
+analyze: false         # self-analysis is off for WUR: it is an extra agent call
+                       # per cell and adds nothing the probes do not already give

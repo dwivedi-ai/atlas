@@ -1,0 +1,93 @@
+diff --git a/ledgerline/cli.py b/ledgerline/cli.py
+index 6673f05..4cd52ac 100644
+--- a/ledgerline/cli.py
++++ b/ledgerline/cli.py
+@@ -63,6 +63,10 @@ def build_parser() -> argparse.ArgumentParser:
+     p_report.add_argument("--currency", help="restrict the report to one currency")
+     p_report.add_argument("--rates", help="path to a base,quote,rate CSV")
+     p_report.add_argument("--limit", type=int, default=0)
++    p_report.add_argument(
++        "--opening", action="store_true",
++        help="start the running balance from the closing balance before the period"
++    )
+     p_report.add_argument("--json", action="store_true", help="emit JSON")
+ 
+     p_export = sub.add_parser("export", parents=[common], help="export a ledger")
+@@ -90,6 +94,7 @@ def _options(args: argparse.Namespace) -> ReportOptions:
+         currency=args.currency,
+         rates=RateTable.load(args.rates) if args.rates else None,
+         limit=args.limit,
++        opening=getattr(args, "opening", False),
+     )
+ 
+ 
+diff --git a/ledgerline/reports.py b/ledgerline/reports.py
+index b86ca1b..2636d5b 100644
+--- a/ledgerline/reports.py
++++ b/ledgerline/reports.py
+@@ -12,6 +12,7 @@ declared at the bottom of this module and then the deployment-local module
+ from __future__ import annotations
+ 
+ from dataclasses import dataclass, field
++from datetime import date, timedelta
+ from typing import Callable, Iterable
+ 
+ from .accounts import (
+@@ -39,6 +40,7 @@ class ReportOptions:
+     currency: str | None = None
+     rates: object | None = None
+     include_closed: bool = False
++    opening: bool = False
+     limit: int = 0
+ 
+     def scoped(self, ledger: Ledger) -> Ledger:
+@@ -216,6 +218,11 @@ def account_statement(ledger: Ledger, options: ReportOptions) -> Report:
+     currency = options.currency or scope._default_currency(account)
+     rows: list[list[str]] = []
+     running = Money.zero(currency)
++    if options.opening and options.period is not None:
++        before = Period(date.min, options.period.start - timedelta(days=1))
++        running = running + ledger.in_period(before).balance(
++            account, include_children=True, currency=currency
++        )
+     for transaction in scope:
+         amount = transaction.amount_for(account, include_children=True)
+         if amount is None or amount.currency != currency.upper():
+@@ -236,7 +243,12 @@ def account_statement(ledger: Ledger, options: ReportOptions) -> Report:
+         title=f"{account} ({_period_label(options)})",
+         columns=("date", "description", "amount", "balance"),
+         rows=rows,
+-        meta={"account": account, "currency": running.currency, "closing": running.minor},
++        meta={
++            "account": account,
++            "currency": running.currency,
++            "closing": running.minor,
++            "opening": bool(options.opening and options.period is not None),
++        },
+     )
+ 
+ 
+diff --git a/tests/test_reports.py b/tests/test_reports.py
+index b25240c..6aef8ca 100644
+--- a/tests/test_reports.py
++++ b/tests/test_reports.py
+@@ -112,3 +112,19 @@ def test_register_replaces_a_name(ledger: Ledger):
+         assert run("transaction-log", ledger) is marker
+     finally:
+         register("transaction-log", original)
++
++
++def test_account_statement_brings_a_balance_forward(ledger: Ledger):
++    december = ReportOptions(
++        account="assets.cash.checking", period=Period.parse("2024-12"), opening=True
++    )
++    report = run("account-statement", ledger, december)
++    assert report.meta["opening"] is True
++    assert report.meta["closing"] == ledger.balance("assets.cash.checking").minor
++
++
++def test_account_statement_without_opening_starts_from_zero(ledger: Ledger):
++    december = ReportOptions(account="assets.cash.checking", period=Period.parse("2024-12"))
++    report = run("account-statement", ledger, december)
++    assert report.meta["opening"] is False
++    assert report.meta["closing"] != ledger.balance("assets.cash.checking").minor

@@ -2,12 +2,16 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "run_record.schema.json",
   "title": "RunRecord",
-  "description": "Canonical telemetry record for one exp-runner agent run. Generalized from the L1-L4 harness: task_id/env_id patterns relaxed, repo + model surfaced, env_id fixed to 'asis'.",
+  "description": "Canonical telemetry record for one exp-runner agent run. Generalized from the L1-L4 harness: task_id/env_id patterns relaxed, repo + model surfaced, env_id fixed to 'asis'. VERSION 2 adds the Workspace Uptake & Retention fields (condition.factors, the six sha256 stamps, backend/model/cli_version, run.matrix_seed/cell_index/run_order_index, tokens.accounting_version, and the WUR artifact paths under raw). Every v2 addition is OPTIONAL, so a v1 record written by the context-ladder harness still validates unchanged; `schema_version` says which generation produced it and NOTHING may be pooled across generations without checking tokens.accounting_version.",
   "type": "object",
   "required": ["schema_version", "run", "condition", "outcome", "tokens", "timing", "navigation", "operations", "raw"],
   "additionalProperties": false,
   "properties": {
-    "schema_version": { "type": "string", "const": "1" },
+    "schema_version": {
+      "description": "\"1\" = the context-ladder record. \"2\" = the same record plus the WUR extensions below.",
+      "type": "string",
+      "enum": ["1", "2"]
+    },
 
     "run": {
       "type": "object",
@@ -20,7 +24,20 @@
         "batch_id":        { "type": ["string", "null"] },
         "replication":     { "type": "integer", "minimum": 1 },
         "timestamp_start": { "type": "string", "format": "date-time" },
-        "timestamp_end":   { "type": "string", "format": "date-time" }
+        "timestamp_end":   { "type": "string", "format": "date-time" },
+
+        "experiment": {
+          "description": "v2. Which instrument produced this row. figures.py refuses to plot rather than plotting zeros when it does not recognize the pair (experiment, schema_version).",
+          "type": ["string", "null"],
+          "enum": ["ladder", "wur", null]
+        },
+        "matrix_seed": {
+          "description": "v2. The job-level seed behind the blocked randomisation in schedule.json. Note the probe cadence is NOT seeded from this — cadence.schedule() is seeded by (salt, task_id, rep) only, deliberately not by arm, so probe timing is a matched covariate across arms.",
+          "type": ["integer", "null"]
+        },
+        "cell_index":       { "description": "v2. Index of this (task, arm, rep) cell within schedule.json.", "type": ["integer", "null"], "minimum": 0 },
+        "run_order_index":  { "description": "v2. Position in the realized launch order — the covariate for any drift over the ~36 h matrix.", "type": ["integer", "null"], "minimum": 0 },
+        "concurrency_at_launch": { "description": "v2. How many runs were in flight when this one started (JOBS <= 4 verified, S3).", "type": ["integer", "null"], "minimum": 0 }
       }
     },
 
@@ -30,12 +47,39 @@
       "additionalProperties": false,
       "properties": {
         "task_id":          { "type": "string" },
-        "env_id":           { "type": "string" },
+        "env_id":           { "type": "string", "description": "Ladder: E0..E6. WUR: the arm id (d2, ctrl, d1-np, ...)." },
+        "condition_id":     { "type": ["string", "null"], "description": "The ARM, under its explicit v2 name; `env_id` keeps the historical ladder spelling and carries the same value, because report.py, figures.py and viz/server.py all read that one. telemetry.py has emitted this since v2, but it was never declared here — so with additionalProperties:false EVERY run printed `['condition']: Additional properties are not allowed ('condition_id' was unexpected)`. An always-on warning is the state in which a real one goes unread." },
         "agent_id":         { "type": "string" },
         "agent_provider":   { "type": "string", "enum": ["anthropic", "openai", "google", "antigravity", "other"] },
-        "base_repo_sha":    { "type": "string" },
+        "base_repo_sha":    { "type": "string", "description": "WUR: the POST-overlay baseline commit, so injected context never appears in git.patch." },
         "repo_url":         { "type": ["string", "null"] },
-        "env_overlay_hash": { "type": ["string", "null"] }
+        "env_overlay_hash": { "type": ["string", "null"] },
+
+        "backend":     { "description": "v2. claude | codex | gemini | agy — the resolver key, distinct from the model id (job.yaml agent.backend).", "type": ["string", "null"] },
+        "model":       { "description": "v2. The concrete model id, e.g. claude-sonnet-5. Sonnet 5 emits ~30% more tokens than Sonnet 4.6 for the same text, so no historical baseline sizes a run without rescaling.", "type": ["string", "null"] },
+        "cli_version": { "description": "v2. e.g. \"2.1.222\". Findings are about one CLI version on one date; a bump mid-experiment can change the transcript format under the extractor.", "type": ["string", "null"] },
+
+        "factors": {
+          "description": "v2. The WUR arm decomposed into its design factors, so figures and parquet do not have to parse the arm id.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "depth":          { "type": ["string", "null"], "enum": ["d0", "d1", "d2", "d3", null] },
+            "format":         { "type": ["string", "null"], "enum": ["prose", "checklist", "table", null] },
+            "channel":        { "type": ["string", "null"], "enum": ["pull", "push", "pointer", null] },
+            "distractors":    { "type": ["integer", "null"], "minimum": 0 },
+            "fact_present":   { "type": ["boolean", "null"] },
+            "probe":          { "type": ["boolean", "null"] },
+            "pointer_regime": { "type": ["string", "null"], "enum": ["none", "prose", "import", null] }
+          }
+        },
+
+        "cli_argv_sha256":      { "description": "v2. Hash of the exact argv the child was launched with.", "$ref": "#/$defs/sha256" },
+        "probe_text_sha256":    { "description": "v2. Hash of the PROBE_TEXT TEMPLATE (with {probe_id} unresolved) — the rendered instance differs per probe by construction. protocol.frozen_hashes() emits it.", "$ref": "#/$defs/sha256" },
+        "pacing_prompt_sha256": { "description": "v2. Reference value 0a687ddfc2f3374378188c2aacde2b5f5d2d97504a63e27dc88a8b9cfcbe249b (338 chars, verbatim, no trailing newline). A different value means the invariant everything rests on was edited.", "$ref": "#/$defs/sha256" },
+        "workspace_sha256":     { "description": "v2. Hash of the planted baseline tree.", "$ref": "#/$defs/sha256" },
+        "init_sha256":          { "description": "v2. Hash of a CANONICALIZED system/init with cwd, memory_paths, session_id and uuid removed — those four vary every run, and hashing the raw event defeats its own purpose. Verified identical across 4 runs.", "$ref": "#/$defs/sha256" },
+        "canary_sha256":        { "description": "v2. Hash of the per-(job, arm) autoload canary answer — the out-of-band verification for d0-push, whose auto-loaded content is invisible in every log.", "$ref": "#/$defs/sha256" }
       }
     },
 
@@ -77,7 +121,18 @@
         "context_acquisition":       { "type": "integer", "minimum": 0 },
         "phase_orientation_input":   { "type": ["integer", "null"], "minimum": 0 },
         "phase_implementation_input":{ "type": ["integer", "null"], "minimum": 0 },
-        "phase_verification_input":  { "type": ["integer", "null"], "minimum": 0 }
+        "phase_verification_input":  { "type": ["integer", "null"], "minimum": 0 },
+
+        "accounting_version": {
+          "description": "v2, and the reason this whole version exists. per_line_v1 = extract/core.py summed usage per transcript LINE, and Claude Code writes one line per content block with a byte-identical usage: input inflated 1.00x-4.90x (median 1.50x, pooled 2.09x) and output 1.00x-8.72x (median 1.94x) over 116 transcripts. per_message_v2 = deduped by message.id, which was measured to equal the terminal result.usage totals EXACTLY. Records of different versions must NEVER be pooled — including the existing context-ladder results, which are affected. Absent means per_line_v1 by construction.",
+          "type": ["string", "null"],
+          "enum": ["per_line_v1", "per_message_v2", null]
+        },
+        "result_input":  { "description": "v2. input + cache_read + cache_creation from the terminal `result` event — the ground truth the deduped sum must equal.", "type": ["integer", "null"], "minimum": 0 },
+        "result_output": { "description": "v2. output_tokens from the terminal `result` event.", "type": ["integer", "null"], "minimum": 0 },
+        "dedupe_delta_input":  { "description": "v2. deduped_total_input - result_input. The pilot gate is exact equality; recording the delta makes a regression of the V7 fix visible instead of silent.", "type": ["integer", "null"] },
+        "dedupe_delta_output": { "description": "v2. deduped_total_output - result_output.", "type": ["integer", "null"] },
+        "cost_usd": { "description": "v2. result.total_cost_usd — the instrument's own cost, measured rather than modelled.", "type": ["number", "null"], "minimum": 0 }
       }
     },
 
@@ -127,7 +182,27 @@
         "web_searches":      { "type": "integer", "minimum": 0 },
         "agent_spawns":      { "type": "integer", "minimum": 0 },
         "replanning_events": { "type": "integer", "minimum": 0 },
-        "message_count":     { "type": "integer", "minimum": 0 }
+        "message_count":     { "type": "integer", "minimum": 0, "description": "Transcript/stream LINES, not messages. Measured up to 13.67x the distinct-message-id count — use turns_total for anything that means 'turns'." },
+
+        "turns_total": {
+          "description": "v2. Distinct assistant message.id count. Assistant-only: user lines carry no message.id, so this is not 'all messages'.",
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "tool_calls_task": {
+          "description": "v2. tool_calls_total EXCLUDING probe turns — the difficulty-band metric. This is what events.jsonl is_probe_turn exists for.",
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "probes_sent":      { "description": "v2. Probes injected on stdin.", "type": ["integer", "null"], "minimum": 0 },
+        "probes_answered":  { "type": ["integer", "null"], "minimum": 0 },
+        "resumes_sent":     { "description": "v2. RESUME_TEXT injections (capped at 3 consecutive, sent identically in the no-probe arms).", "type": ["integer", "null"], "minimum": 0 },
+        "permission_denials": { "description": "v2. len(result.permission_denials). A denied call is retried by the model and then succeeds, costing two barrier fires.", "type": ["integer", "null"], "minimum": 0 },
+        "max_tool_uses_per_message": {
+          "description": "v2. The pacing invariant, counted per distinct message.id — never per stream line, which would inherit the V7 bug. Pilot gate: == 1 in >= 95% of runs.",
+          "type": ["integer", "null"],
+          "minimum": 0
+        }
       }
     },
 
@@ -143,14 +218,35 @@
     },
 
     "raw": {
+      "description": "Pointers to the immutable layer-1 artifacts. Raw before derived: every derived table can be rebuilt from these months later after a scanner bugfix.",
       "type": "object",
       "required": ["transcript_path", "patch_path", "grade_path"],
       "additionalProperties": false,
       "properties": {
-        "transcript_path": { "type": "string" },
+        "transcript_path": { "type": "string", "description": "WUR: copied BY --session-id, never by newest-mtime, and load-bearing — it is the only source of truncation information." },
         "patch_path":      { "type": "string" },
-        "grade_path":      { "type": "string" }
+        "grade_path":      { "type": "string" },
+
+        "stream_path":      { "description": "v2. Verbatim child stdout, stream.jsonl(.gz).", "type": ["string", "null"] },
+        "run_meta_path":    { "type": ["string", "null"] },
+        "hygiene_path":     { "description": "v2. preflight H1..H12, fail-closed, no API call.", "type": ["string", "null"] },
+        "probe_plan_path":  { "description": "v2. The seeded cadence, written BEFORE the child starts so it survives a dead run.", "type": ["string", "null"] },
+        "gate_path":        { "description": "v2. gate/tool_calls.jsonl — the authoritative barrier ordering.", "type": ["string", "null"] },
+        "use_detect_path":  { "description": "v2. Detector output, produced BEFORE anything else touches the tree (grading mutates the workspace).", "type": ["string", "null"] },
+        "events_path":      { "type": ["string", "null"] },
+        "exposure_path":    { "type": ["string", "null"] },
+        "probes_path":      { "type": ["string", "null"] },
+        "fact_trace_path":  { "type": ["string", "null"] },
+        "persisted_dir":    { "description": "v2. Copies of persistedOutputPath files — what the model did NOT see. Never counted as exposure.", "type": ["string", "null"] }
       }
+    }
+  },
+
+  "$defs": {
+    "sha256": {
+      "description": "Lowercase hex sha256, or null on a v1 record. Everything the model saw is hashed, so a silent edit invalidates cross-run comparison loudly instead of quietly.",
+      "type": ["string", "null"],
+      "pattern": "^[0-9a-f]{64}$"
     }
   }
 }

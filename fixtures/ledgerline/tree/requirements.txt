@@ -1,0 +1,3 @@
+# ledgerline has no runtime dependencies — it is standard library only.
+# The test suite needs pytest, and nothing else.
+pytest>=7.0

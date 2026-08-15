@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import json
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -34,6 +35,8 @@ def _claude_md() -> str:
     return "# CLAUDE.md\n\nImports the root operating contract for Claude Code:\n\n@AGENTS.md\n"
 
 
+
+
 def _native_context(model: str) -> tuple[str, str]:
     """The agent-native root context file for the E4/E5/E6 scaffold, by model.
 
@@ -42,22 +45,52 @@ def _native_context(model: str) -> tuple[str, str]:
     """
     m = (model or "").lower()
     if m.startswith("gemini") or m == "google":
-        return "GEMINI.md", (
-            "# GEMINI.md\n\nProject operating context for Gemini CLI. "
+        return "GEMINI.md", ("# GEMINI.md\n\nProject operating context for Gemini CLI. "
             "See @AGENTS.md for the full operating contract.\n"
         )
     if m.startswith("agy") or m == "antigravity":
         # agy auto-loads <workspace>/.agents/AGENTS.md (verified); root AGENTS.md is NOT
         # auto-injected, so point the auto-loaded file at the rest of the scaffold.
-        return ".agents/AGENTS.md", (
-            "# AGENTS.md — Antigravity workspace rules\n\n"
+        return ".agents/AGENTS.md", ("# AGENTS.md — Antigravity workspace rules\n\n"
             "Project operating context. Read the repository's AGENTS.md and PROJECT.md for the "
             "full operating contract, conventions, and architecture before making changes.\n"
         )
     return "CLAUDE.md", _claude_md()
 
 
-def _xo_files() -> dict:
+def _base_gitignore(job_dir: Path, sha: str) -> str:
+    """The repo's OWN.gitignore at the pinned SHA, or "" if it has none."""
+    try:
+        r = subprocess.run(["git", "--git-dir", str(Path(job_dir) / "repo.git"), "show", f"{sha}:.gitignore"],
+            capture_output=True, text=True, timeout=30,
+        )
+        return r.stdout if r.returncode == 0 else ""
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _merged_gitignore(base: str) -> str:
+    """The repo's.gitignore with `.xo/` APPENDED — never replaced.
+
+    The E6 overlay used to ship a one-line `.gitignore` containing just `.xo/`,
+    which OVERWRITES whatever the repo shipped. teardown_run.sh captures untracked
+    files with `git ls-files --others --exclude-standard`, which honours
+.gitignore — so on any repo that ignores its own build output, replacing the
+    file pushed `.pytest_cache/`, `*.egg-info/`, `build/`, `.mypy_cache/` and
+    `.ruff_cache/` into git.patch **in the E6 arm only**. That is an
+    arm-correlated confound in the diff itself: it inflates patch size and
+    file-change counts for exactly one rung of the ladder. Appending removes the
+    cause instead of measuring around it.
+    """
+    base = base or ""
+    if any(line.strip() == ".xo/" for line in base.splitlines()):
+        return base if base.endswith("\n") else base + "\n"
+    if base and not base.endswith("\n"):
+        base += "\n"
+    return base + ".xo/\n"
+
+
+def _xo_files(base_gitignore: str = "") -> dict:
     return {
         ".xo/project.json": json.dumps({"name": "project", "schema": "1"}, indent=2),
         ".xo/peers.json": json.dumps({"peers": []}, indent=2),
@@ -67,7 +100,7 @@ def _xo_files() -> dict:
         ".xo/runtime/sync.json": json.dumps({"last_sync": None}, indent=2),
         ".xo/runtime/sessions/sessionslist.json": json.dumps({"sessions": []}, indent=2),
         ".xo/runtime/timeline.jsonl": "",
-        ".gitignore": ".xo/\n",
+        ".gitignore": _merged_gitignore(base_gitignore),
     }
 
 
@@ -94,7 +127,10 @@ def _generate_artifacts(job_dir: Path, spec: dict, needed: list[str]) -> Path:
     art_dir = job_dir / "environments" / "_artifacts"
     art_dir.mkdir(parents=True, exist_ok=True)
     sha = spec["repo"]["pinned_sha"]
-    model = spec["model"]
+    # jobspec._model_of, not spec["model"]: v2 moved model selection into
+    # agent{backend, model, effort} and dropped `model` from the schema's required list,
+    # so a v2 spec without a top-level `model:` would KeyError here.
+    model = jobspec._model_of(spec)
     max_seconds = int(spec.get("max_seconds") or 0)
     venv = job_dir / ".venv"
     for art in needed:
@@ -144,7 +180,8 @@ def _copy(art_dir: Path, edir: Path, rel: str) -> None:
         shutil.copyfile(src, dst)
 
 
-def _compose_env(env: str, art_dir: Path, edir: Path, model: str = "claude") -> None:
+def _compose_env(env: str, art_dir: Path, edir: Path, model: str = "claude",
+                 base_gitignore: str = "") -> None:
     spec = ladder.ENV_SPEC[env]
     if edir.exists():
         shutil.rmtree(edir)
@@ -162,7 +199,7 @@ def _compose_env(env: str, art_dir: Path, edir: Path, model: str = "claude") -> 
         for rel, c in _memory_seeded_extra().items():
             _write(edir, rel, c)
     if spec.get("dox"):
-        for rel, c in _xo_files().items():
+        for rel, c in _xo_files(base_gitignore).items():
             _write(edir, rel, c)
         # child AGENTS.md: first line "DIR: <path>" then content
         child = art_dir / "AGENTS.child.md"
@@ -176,6 +213,8 @@ def _compose_env(env: str, art_dir: Path, edir: Path, model: str = "claude") -> 
             _write(edir, f"{d}/AGENTS.md", body)
         _write(edir, "memory/episodic/seed-note.md",
                "# Episode\n\nRead the root AGENTS.md rail and the nearest child AGENTS.md before editing.\n")
+
+
 
 
 def generate(job_dir: Path) -> dict:
@@ -193,8 +232,10 @@ def generate(job_dir: Path) -> dict:
         art_dir.mkdir(parents=True, exist_ok=True)
         print("[ctx] only E0 (bare) — no artifacts to generate")
 
+    base_gitignore = _base_gitignore(job_dir, spec["repo"]["pinned_sha"])
     for env in envs:
-        _compose_env(env, art_dir, env_root / env, spec.get("model", "claude"))
+        _compose_env(env, art_dir, env_root / env, spec.get("model", "claude"),
+                     base_gitignore)
     print(f"[ctx] environments ready: {', '.join(envs)}")
     return {"environments": envs, "artifacts": needed}
 
